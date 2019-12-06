@@ -1,0 +1,228 @@
+fileFormatVersion: 2
+guid: 374d0b93ed3e82d4b8470a1a052fa177
+ModelImporter:
+  serializedVersion: 23
+  fileIDToRecycleName:
+    100000: //RootNode
+    400000: //RootNode
+    2100000: Window_M
+    2100002: Boxing_Ring_M
+    2100004: Fruit_Basket_M
+    2100006: Shelf_M
+    2100008: Towel_M
+    2100010: Punching_Ball_M
+    2100012: Concrete_M
+    2100014: Corner_Cushion_M
+    2100016: Water_Server_M
+    2100018: Floor_M
+    2100020: Entrance_M
+    2100022: Wall_M
+    2100024: MIrror_M
+    2100026: Background_M
+    2100028: Bag_M
+    2100030: Protein_M
+    2100032: Shaker_M
+    2100034: Rowing_Machine_M
+    2100036: Runing_Machine_M
+    2100038: Stand_M
+    2100040: Lamp_M
+    2100042: TV
+    2300000: //RootNode
+    3300000: //RootNode
+    4300000: TrainingRoom02
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Background_M
+    second: {fileID: 2100000, guid: 13a4830f98847ac41bb2276485908812, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Bag_M
+    second: {fileID: 2100000, guid: 2b448dc06d8085e4ab72f9639902d08a, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Boxing_Ring_M
+    second: {fileID: 2100000, guid: 3bbdc8c276d211a44bb6307212af073c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Concrete_M
+    second: {fileID: 2100000, guid: d77135688f9e41044849e460fc33f2bc, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Corner_Cushion_M
+    second: {fileID: 2100000, guid: ecf41c1cd2370244d911bfbc5be34018, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Entrance_M
+    second: {fileID: 2100000, guid: 768089caa090ebd49a1f58865332ddd7, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Floor_M
+    second: {fileID: 2100000, guid: f08ead1d411215d4889c4c027f22b853, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Fruit_Basket_M
+    second: {fileID: 2100000, guid: 79ae58922e0391c4e979acf9cb4c7975, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Lamp_M
+    second: {fileID: 2100000, guid: b85c01a8fbdfa8f4b8c00c931dd3a3dd, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: MIrror_M
+    second: {fileID: 2100000, guid: 5927934e8d297c44ba4a3fd2a93d1923, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Protein_M
+    second: {fileID: 2100000, guid: 7ae198e54b36364489eff40d4b7b6ad2, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Punching_Ball_M
+    second: {fileID: 2100000, guid: 425c8b65ff4342b46ac1bc4da174c06b, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Rowing_Machine_M
+    second: {fileID: 2100000, guid: 3deef9d6395772e439d63a5da3cc5cce, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Runing_Machine_M
+    second: {fileID: 2100000, guid: b891c4e6aa453d64abdc70ceee5c0a29, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Shaker_M
+    second: {fileID: 2100000, guid: 858c1461bd24102488c37e87971a9072, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Shelf_M
+    second: {fileID: 2100000, guid: aad98098fe00e0b409f3c8f13d591c4e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Stand_M
+    second: {fileID: 2100000, guid: fa96d8732cfb68e48949362057ed6e8d, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: TV
+    second: {fileID: 2100000, guid: ffcff66453fdebc4bb6d08ce49f0dfea, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Towel_M
+    second: {fileID: 2100000, guid: 544f529679275ac42becd0e0dbb1b37e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Wall_M
+    second: {fileID: 2100000, guid: 54504e00cff09c946ace3a5d379176fa, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Water_Server_M
+    second: {fileID: 2100000, guid: 66d281d1aeb897d4fb8a9779d2109745, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Window_M
+    second: {fileID: 2100000, guid: 024f25f4f72ddb64ebd75318a718f3f2, type: 2}
+  materials:
+    importMaterials: 1
+    materialName: 0
+    materialSearch: 1
+    materialLocation: 1
+  animations:
+    legacyGenerateAnimations: 4
+    bakeSimulation: 0
+    resampleCurves: 1
+    optimizeGameObjects: 0
+    motionNodeName: 
+    rigImportErrors: 
+    rigImportWarnings: 
+    animationImportErrors: 
+    animationImportWarnings: 
+    animationRetargetingWarnings: 
+    animationDoRetargetingWarnings: 0
+    importAnimatedCustomProperties: 0
+    importConstraints: 0
+    animationCompression: 1
+    animationRotationError: 0.5
+    animationPositionError: 0.5
+    animationScaleError: 0.5
+    animationWrapMode: 0
+    extraExposedTransformPaths: []
+    extraUserProperties: []
+    clipAnimations: []
+    isReadable: 1
+  meshes:
+    lODScreenPercentages: []
+    globalScale: 1
+    meshCompression: 0
+    addColliders: 0
+    useSRGBMaterialColor: 1
+    importVisibility: 1
+    importBlendShapes: 1
+    importCameras: 1
+    importLights: 1
+    swapUVChannels: 0
+    generateSecondaryUV: 0
+    useFileUnits: 1
+    optimizeMeshForGPU: 1
+    keepQuads: 0
+    weldVertices: 1
+    preserveHierarchy: 0
+    indexFormat: 0
+    secondaryUVAngleDistortion: 8
+    secondaryUVAreaDistortion: 15.000001
+    secondaryUVHardAngle: 88
+    secondaryUVPackMargin: 4
+    useFileScale: 1
+    previousCalculatedGlobalScale: 1
+    hasPreviousCalculatedGlobalScale: 0
+  tangentSpace:
+    normalSmoothAngle: 60
+    normalImportMode: 0
+    tangentImportMode: 3
+    normalCalculationMode: 4
+    legacyComputeAllNormalsFromSmoothingGroupsWhenMeshHasBlendShapes: 0
+    blendShapeNormalImportMode: 1
+    normalSmoothingSource: 0
+  importAnimation: 1
+  copyAvatar: 0
+  humanDescription:
+    serializedVersion: 2
+    human: []
+    skeleton: []
+    armTwist: 0.5
+    foreArmTwist: 0.5
+    upperLegTwist: 0.5
+    legTwist: 0.5
+    armStretch: 0.05
+    legStretch: 0.05
+    feetSpacing: 0
+    rootMotionBoneName: 
+    hasTranslationDoF: 0
+    hasExtraRoot: 0
+    skeletonHasParents: 1
+  lastHumanDescriptionAvatarSource: {instanceID: 0}
+  animationType: 0
+  humanoidOversampling: 1
+  additionalBone: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
