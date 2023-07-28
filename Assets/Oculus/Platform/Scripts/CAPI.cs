@@ -64,6 +64,13 @@ namespace Oculus.Platform
       public double doubleValue_;
     };
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ovrNetSyncVec3 {
+      public float x;
+      public float y;
+      public float z;
+    }
+
     public static IntPtr ArrayOfStructsToIntPtr(Array ar)
     {
       int totalSize = 0;
@@ -78,6 +85,24 @@ namespace Oculus.Platform
         curr = (IntPtr)((long)curr + Marshal.SizeOf(ar.GetValue(i)));
       }
       return childrenPtr;
+    }
+
+    public static CAPI.ovrKeyValuePair[] DictionaryToOVRKeyValuePairs(Dictionary<InitConfigOptions, bool> dict)
+    {
+      if(dict == null || dict.Count == 0)
+      {
+        return null;
+      }
+
+      var nativeCustomData = new CAPI.ovrKeyValuePair[dict.Count];
+
+      int i = 0;
+      foreach(var item in dict)
+      {
+        nativeCustomData[i] = new CAPI.ovrKeyValuePair(item.Key.ToString(), item.Value ? 1 : 0);
+        i++;
+      }
+      return nativeCustomData;
     }
 
     public static CAPI.ovrKeyValuePair[] DictionaryToOVRKeyValuePairs(Dictionary<string, object> dict)
@@ -120,33 +145,6 @@ namespace Oculus.Platform
       return outArray;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct ovrMatchmakingCriterion {
-      public ovrMatchmakingCriterion(string key, MatchmakingCriterionImportance importance)
-      {
-        key_ = key;
-        importance_ = importance;
-
-        parameterArray = IntPtr.Zero;
-        parameterArrayCount = 0;
-      }
-
-      public string key_;
-      public MatchmakingCriterionImportance importance_;
-
-      public IntPtr parameterArray;
-      public uint parameterArrayCount;
-    };
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct ovrMatchmakingCustomQueryData {
-      public IntPtr dataArray;
-      public uint dataArrayCount;
-
-      public IntPtr criterionArray;
-      public uint criterionArrayCount;
-    };
-
     public static Dictionary<string, string> DataStoreFromNative(IntPtr pointer) {
       var d = new Dictionary<string, string>();
       var size = (int)CAPI.ovr_DataStore_GetNumKeys(pointer);
@@ -180,6 +178,12 @@ namespace Oculus.Platform
     public static DateTime DateTimeFromNative(ulong seconds_since_the_one_true_epoch) {
       var dt = new DateTime(1970, 1, 1, 0, 0, 0, 0);
       return dt.AddSeconds(seconds_since_the_one_true_epoch).ToLocalTime();
+    }
+
+    public static ulong DateTimeToNative(DateTime dt) {
+      var universal = (dt.Kind != DateTimeKind.Utc) ? dt.ToUniversalTime() : dt;
+      var epochStart = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+      return (ulong) (universal - epochStart).TotalSeconds;
     }
 
     public static byte[] BlobFromNative(uint size, IntPtr pointer) {
@@ -238,6 +242,9 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
     public static extern ulong ovr_PlatformInitializeWithAccessToken(UInt64 appId, string accessToken);
 
+    [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+    public static extern ulong ovr_PlatformInitializeWithAccessTokenAndOptions(UInt64 appId, string accessToken, ovrKeyValuePair[] configOptions, UIntPtr numOptions);
+
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern bool ovr_UnityInitWrapperWindows(string appId, IntPtr loggingCB);
 
@@ -263,9 +270,6 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern void ovr_FreeMessage(IntPtr message);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_NetworkingPeer_GetSendPolicy(IntPtr networkingPeer);
 
 
     // VOIP
@@ -320,6 +324,9 @@ namespace Oculus.Platform
 
 
     // Logging
+    public static void LogNewUnifiedEvent(LogEventName eventName, Dictionary<string, string> values) {
+      LogNewEvent(eventName.ToString(), values);
+    }
 
     public static void LogNewEvent(string eventName, Dictionary<string, string> values) {
       var eventNameNative = StringToNative(eventName);
@@ -352,6 +359,15 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_ApplicationLifecycle_GetLaunchDetails();
 
+    public static void ovr_ApplicationLifecycle_LogDeeplinkResult(string trackingID, LaunchResult result) {
+      IntPtr trackingID_native = StringToNative(trackingID);
+      ovr_ApplicationLifecycle_LogDeeplinkResult_Native(trackingID_native, result);
+      Marshal.FreeCoTaskMem(trackingID_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationLifecycle_LogDeeplinkResult")]
+    private static extern void ovr_ApplicationLifecycle_LogDeeplinkResult_Native(IntPtr trackingID, LaunchResult result);
+
     public static ulong ovr_HTTP_StartTransfer(string url, ovrKeyValuePair[] headers) {
       IntPtr url_native = StringToNative(url);
       UIntPtr headers_length = (UIntPtr)headers.Length;
@@ -378,34 +394,34 @@ namespace Oculus.Platform
     private static extern IntPtr ovr_Message_GetStringForJavascript_Native(IntPtr message);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_Net_Accept(UInt64 peerID);
+    public static extern UIntPtr ovr_NetSync_GetAmbisonicFloatPCM(long connection_id, float[] outputBuffer, UIntPtr outputBufferNumElements);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_Net_AcceptForCurrentRoom();
+    public static extern UIntPtr ovr_NetSync_GetAmbisonicInt16PCM(long connection_id, Int16[] outputBuffer, UIntPtr outputBufferNumElements);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_Net_Close(UInt64 peerID);
+    public static extern UIntPtr ovr_NetSync_GetAmbisonicInterleavedFloatPCM(long connection_id, float[] outputBuffer, UIntPtr outputBufferNumElements);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_Net_CloseForCurrentRoom();
+    public static extern UIntPtr ovr_NetSync_GetAmbisonicInterleavedInt16PCM(long connection_id, Int16[] outputBuffer, UIntPtr outputBufferNumElements);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_Net_Connect(UInt64 peerID);
+    public static extern bool ovr_NetSync_GetListenerPosition(long connection_id, UInt64 sessionId, ref ovrNetSyncVec3 position);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_Net_IsConnected(UInt64 peerID);
+    public static extern UIntPtr ovr_NetSync_GetMonostreamFloatPCM(long connection_id, UInt64 sessionId, float[] outputBuffer, UIntPtr outputBufferNumElements);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Net_Ping(UInt64 peerID);
+    public static extern UIntPtr ovr_NetSync_GetMonostreamInt16PCM(long connection_id, UInt64 session_id, Int16[] outputBuffer, UIntPtr outputBufferNumElements);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Net_ReadPacket();
+    public static extern UIntPtr ovr_NetSync_GetPcmBufferMaxSamples();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_Net_SendPacket(UInt64 userID, UIntPtr length, byte[] bytes, SendPolicy policy);
+    public static extern bool ovr_NetSync_GetVoipAmplitude(long connection_id, UInt64 sessionId, ref float amplitude);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_Net_SendPacketToCurrentRoom(UIntPtr length, byte[] bytes, SendPolicy policy);
+    public static extern void ovr_NetSync_SetListenerPosition(long connection_id, ref ovrNetSyncVec3 position);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern int ovr_Party_PluginGetSharedMemHandle();
@@ -476,6 +492,12 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern void ovr_Voip_Stop(UInt64 userID);
 
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_AbuseReport_LaunchAdvancedReportFlow(UInt64 content_id, IntPtr abuse_report_options);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_AbuseReport_ReportRequestHandled(ReportRequestResponse response);
+
     public static ulong ovr_Achievements_AddCount(string name, ulong count) {
       IntPtr name_native = StringToNative(name);
       var result = (ovr_Achievements_AddCount_Native(name_native, count));
@@ -521,7 +543,10 @@ namespace Oculus.Platform
     private static extern ulong ovr_Achievements_Unlock_Native(IntPtr name);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Application_ExecuteCoordinatedLaunch(ulong appID, ulong roomID);
+    public static extern ulong ovr_Application_CancelAppDownload();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Application_CheckAppDownloadProgress();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Application_GetInstalledApplications();
@@ -530,7 +555,13 @@ namespace Oculus.Platform
     public static extern ulong ovr_Application_GetVersion();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Application_InstallAppUpdateAndRelaunch(IntPtr deeplink_options);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Application_LaunchOtherApp(UInt64 appID, IntPtr deeplink_options);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Application_StartAppDownload();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_ApplicationLifecycle_GetRegisteredPIDs();
@@ -615,6 +646,9 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_AssetFile_StatusByName")]
     private static extern ulong ovr_AssetFile_StatusByName_Native(IntPtr assetFileName);
 
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Avatar_LaunchAvatarEditor(IntPtr options);
+
     public static ulong ovr_Avatar_UpdateMetaData(string avatarMetaData, string imageFilePath) {
       IntPtr avatarMetaData_native = StringToNative(avatarMetaData);
       IntPtr imageFilePath_native = StringToNative(imageFilePath);
@@ -627,127 +661,57 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Avatar_UpdateMetaData")]
     private static extern ulong ovr_Avatar_UpdateMetaData_Native(IntPtr avatarMetaData, IntPtr imageFilePath);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Cal_FinalizeApplication(UInt64 groupingObject, UInt64[] userIDs, int numUserIDs, UInt64 finalized_application_ID);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Cal_GetSuggestedApplications(UInt64 groupingObject, UInt64[] userIDs, int numUserIDs);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Cal_ProposeApplication(UInt64 groupingObject, UInt64[] userIDs, int numUserIDs, UInt64 proposed_application_ID);
-
-    public static ulong ovr_CloudStorage_Delete(string bucket, string key) {
-      IntPtr bucket_native = StringToNative(bucket);
-      IntPtr key_native = StringToNative(key);
-      var result = (ovr_CloudStorage_Delete_Native(bucket_native, key_native));
-      Marshal.FreeCoTaskMem(bucket_native);
-      Marshal.FreeCoTaskMem(key_native);
+    public static ulong ovr_Challenges_Create(string leaderboardName, IntPtr challengeOptions) {
+      IntPtr leaderboardName_native = StringToNative(leaderboardName);
+      var result = (ovr_Challenges_Create_Native(leaderboardName_native, challengeOptions));
+      Marshal.FreeCoTaskMem(leaderboardName_native);
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage_Delete")]
-    private static extern ulong ovr_CloudStorage_Delete_Native(IntPtr bucket, IntPtr key);
-
-    public static ulong ovr_CloudStorage_Load(string bucket, string key) {
-      IntPtr bucket_native = StringToNative(bucket);
-      IntPtr key_native = StringToNative(key);
-      var result = (ovr_CloudStorage_Load_Native(bucket_native, key_native));
-      Marshal.FreeCoTaskMem(bucket_native);
-      Marshal.FreeCoTaskMem(key_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage_Load")]
-    private static extern ulong ovr_CloudStorage_Load_Native(IntPtr bucket, IntPtr key);
-
-    public static ulong ovr_CloudStorage_LoadBucketMetadata(string bucket) {
-      IntPtr bucket_native = StringToNative(bucket);
-      var result = (ovr_CloudStorage_LoadBucketMetadata_Native(bucket_native));
-      Marshal.FreeCoTaskMem(bucket_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage_LoadBucketMetadata")]
-    private static extern ulong ovr_CloudStorage_LoadBucketMetadata_Native(IntPtr bucket);
-
-    public static ulong ovr_CloudStorage_LoadConflictMetadata(string bucket, string key) {
-      IntPtr bucket_native = StringToNative(bucket);
-      IntPtr key_native = StringToNative(key);
-      var result = (ovr_CloudStorage_LoadConflictMetadata_Native(bucket_native, key_native));
-      Marshal.FreeCoTaskMem(bucket_native);
-      Marshal.FreeCoTaskMem(key_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage_LoadConflictMetadata")]
-    private static extern ulong ovr_CloudStorage_LoadConflictMetadata_Native(IntPtr bucket, IntPtr key);
-
-    public static ulong ovr_CloudStorage_LoadHandle(string handle) {
-      IntPtr handle_native = StringToNative(handle);
-      var result = (ovr_CloudStorage_LoadHandle_Native(handle_native));
-      Marshal.FreeCoTaskMem(handle_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage_LoadHandle")]
-    private static extern ulong ovr_CloudStorage_LoadHandle_Native(IntPtr handle);
-
-    public static ulong ovr_CloudStorage_LoadMetadata(string bucket, string key) {
-      IntPtr bucket_native = StringToNative(bucket);
-      IntPtr key_native = StringToNative(key);
-      var result = (ovr_CloudStorage_LoadMetadata_Native(bucket_native, key_native));
-      Marshal.FreeCoTaskMem(bucket_native);
-      Marshal.FreeCoTaskMem(key_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage_LoadMetadata")]
-    private static extern ulong ovr_CloudStorage_LoadMetadata_Native(IntPtr bucket, IntPtr key);
-
-    public static ulong ovr_CloudStorage_ResolveKeepLocal(string bucket, string key, string remoteHandle) {
-      IntPtr bucket_native = StringToNative(bucket);
-      IntPtr key_native = StringToNative(key);
-      IntPtr remoteHandle_native = StringToNative(remoteHandle);
-      var result = (ovr_CloudStorage_ResolveKeepLocal_Native(bucket_native, key_native, remoteHandle_native));
-      Marshal.FreeCoTaskMem(bucket_native);
-      Marshal.FreeCoTaskMem(key_native);
-      Marshal.FreeCoTaskMem(remoteHandle_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage_ResolveKeepLocal")]
-    private static extern ulong ovr_CloudStorage_ResolveKeepLocal_Native(IntPtr bucket, IntPtr key, IntPtr remoteHandle);
-
-    public static ulong ovr_CloudStorage_ResolveKeepRemote(string bucket, string key, string remoteHandle) {
-      IntPtr bucket_native = StringToNative(bucket);
-      IntPtr key_native = StringToNative(key);
-      IntPtr remoteHandle_native = StringToNative(remoteHandle);
-      var result = (ovr_CloudStorage_ResolveKeepRemote_Native(bucket_native, key_native, remoteHandle_native));
-      Marshal.FreeCoTaskMem(bucket_native);
-      Marshal.FreeCoTaskMem(key_native);
-      Marshal.FreeCoTaskMem(remoteHandle_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage_ResolveKeepRemote")]
-    private static extern ulong ovr_CloudStorage_ResolveKeepRemote_Native(IntPtr bucket, IntPtr key, IntPtr remoteHandle);
-
-    public static ulong ovr_CloudStorage_Save(string bucket, string key, byte[] data, uint dataSize, long counter, string extraData) {
-      IntPtr bucket_native = StringToNative(bucket);
-      IntPtr key_native = StringToNative(key);
-      IntPtr extraData_native = StringToNative(extraData);
-      var result = (ovr_CloudStorage_Save_Native(bucket_native, key_native, data, dataSize, counter, extraData_native));
-      Marshal.FreeCoTaskMem(bucket_native);
-      Marshal.FreeCoTaskMem(key_native);
-      Marshal.FreeCoTaskMem(extraData_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage_Save")]
-    private static extern ulong ovr_CloudStorage_Save_Native(IntPtr bucket, IntPtr key, byte[] data, uint dataSize, long counter, IntPtr extraData);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Challenges_Create")]
+    private static extern ulong ovr_Challenges_Create_Native(IntPtr leaderboardName, IntPtr challengeOptions);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_CloudStorage2_GetUserDirectoryPath();
+    public static extern ulong ovr_Challenges_DeclineInvite(UInt64 challengeID);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_Delete(UInt64 challengeID);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_Get(UInt64 challengeID);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_GetEntries(UInt64 challengeID, int limit, LeaderboardFilterType filter, LeaderboardStartAt startAt);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_GetEntriesAfterRank(UInt64 challengeID, int limit, ulong afterRank);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_GetEntriesByIds(UInt64 challengeID, int limit, LeaderboardStartAt startAt, UInt64[] userIDs, uint userIDLength);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_GetList(IntPtr challengeOptions, int limit);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_GetNextChallenges(IntPtr handle);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_GetNextEntries(IntPtr handle);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_GetPreviousChallenges(IntPtr handle);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_GetPreviousEntries(IntPtr handle);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_Join(UInt64 challengeID);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_Leave(UInt64 challengeID);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Challenges_UpdateInfo(UInt64 challengeID, IntPtr challengeOptions);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Colocation_GetCurrentMapUuid();
@@ -772,6 +736,26 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Colocation_ShareMap")]
     private static extern ulong ovr_Colocation_ShareMap_Native(IntPtr uuid);
 
+    public static ulong ovr_DeviceApplicationIntegrity_GetAttestationToken(string challenge_nonce) {
+      IntPtr challenge_nonce_native = StringToNative(challenge_nonce);
+      var result = (ovr_DeviceApplicationIntegrity_GetAttestationToken_Native(challenge_nonce_native));
+      Marshal.FreeCoTaskMem(challenge_nonce_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_DeviceApplicationIntegrity_GetAttestationToken")]
+    private static extern ulong ovr_DeviceApplicationIntegrity_GetAttestationToken_Native(IntPtr challenge_nonce);
+
+    public static ulong ovr_DeviceApplicationIntegrity_GetIntegrityToken(string challenge_nonce) {
+      IntPtr challenge_nonce_native = StringToNative(challenge_nonce);
+      var result = (ovr_DeviceApplicationIntegrity_GetIntegrityToken_Native(challenge_nonce_native));
+      Marshal.FreeCoTaskMem(challenge_nonce_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_DeviceApplicationIntegrity_GetIntegrityToken")]
+    private static extern ulong ovr_DeviceApplicationIntegrity_GetIntegrityToken_Native(IntPtr challenge_nonce);
+
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Entitlement_GetIsViewerEntitled();
 
@@ -794,6 +778,87 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GraphAPI_Post")]
     private static extern ulong ovr_GraphAPI_Post_Native(IntPtr url);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_GroupPresence_Clear();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_GroupPresence_GetInvitableUsers(IntPtr options);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_GroupPresence_GetSentInvites();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_GroupPresence_LaunchInvitePanel(IntPtr options);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_GroupPresence_LaunchMultiplayerErrorDialog(IntPtr options);
+
+    public static ulong ovr_GroupPresence_LaunchRejoinDialog(string lobby_session_id, string match_session_id, string destination_api_name) {
+      IntPtr lobby_session_id_native = StringToNative(lobby_session_id);
+      IntPtr match_session_id_native = StringToNative(match_session_id);
+      IntPtr destination_api_name_native = StringToNative(destination_api_name);
+      var result = (ovr_GroupPresence_LaunchRejoinDialog_Native(lobby_session_id_native, match_session_id_native, destination_api_name_native));
+      Marshal.FreeCoTaskMem(lobby_session_id_native);
+      Marshal.FreeCoTaskMem(match_session_id_native);
+      Marshal.FreeCoTaskMem(destination_api_name_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresence_LaunchRejoinDialog")]
+    private static extern ulong ovr_GroupPresence_LaunchRejoinDialog_Native(IntPtr lobby_session_id, IntPtr match_session_id, IntPtr destination_api_name);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_GroupPresence_LaunchRosterPanel(IntPtr options);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_GroupPresence_SendInvites(UInt64[] userIDs, uint userIDLength);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_GroupPresence_Set(IntPtr groupPresenceOptions);
+
+    public static ulong ovr_GroupPresence_SetDeeplinkMessageOverride(string deeplink_message) {
+      IntPtr deeplink_message_native = StringToNative(deeplink_message);
+      var result = (ovr_GroupPresence_SetDeeplinkMessageOverride_Native(deeplink_message_native));
+      Marshal.FreeCoTaskMem(deeplink_message_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresence_SetDeeplinkMessageOverride")]
+    private static extern ulong ovr_GroupPresence_SetDeeplinkMessageOverride_Native(IntPtr deeplink_message);
+
+    public static ulong ovr_GroupPresence_SetDestination(string api_name) {
+      IntPtr api_name_native = StringToNative(api_name);
+      var result = (ovr_GroupPresence_SetDestination_Native(api_name_native));
+      Marshal.FreeCoTaskMem(api_name_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresence_SetDestination")]
+    private static extern ulong ovr_GroupPresence_SetDestination_Native(IntPtr api_name);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_GroupPresence_SetIsJoinable(bool is_joinable);
+
+    public static ulong ovr_GroupPresence_SetLobbySession(string id) {
+      IntPtr id_native = StringToNative(id);
+      var result = (ovr_GroupPresence_SetLobbySession_Native(id_native));
+      Marshal.FreeCoTaskMem(id_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresence_SetLobbySession")]
+    private static extern ulong ovr_GroupPresence_SetLobbySession_Native(IntPtr id);
+
+    public static ulong ovr_GroupPresence_SetMatchSession(string id) {
+      IntPtr id_native = StringToNative(id);
+      var result = (ovr_GroupPresence_SetMatchSession_Native(id_native));
+      Marshal.FreeCoTaskMem(id_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresence_SetMatchSession")]
+    private static extern ulong ovr_GroupPresence_SetMatchSession_Native(IntPtr id);
 
     public static ulong ovr_HTTP_Get(string url) {
       IntPtr url_native = StringToNative(url);
@@ -886,6 +951,16 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_LanguagePack_SetCurrent")]
     private static extern ulong ovr_LanguagePack_SetCurrent_Native(IntPtr tag);
 
+    public static ulong ovr_Leaderboard_Get(string leaderboardName) {
+      IntPtr leaderboardName_native = StringToNative(leaderboardName);
+      var result = (ovr_Leaderboard_Get_Native(leaderboardName_native));
+      Marshal.FreeCoTaskMem(leaderboardName_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Leaderboard_Get")]
+    private static extern ulong ovr_Leaderboard_Get_Native(IntPtr leaderboardName);
+
     public static ulong ovr_Leaderboard_GetEntries(string leaderboardName, int limit, LeaderboardFilterType filter, LeaderboardStartAt startAt) {
       IntPtr leaderboardName_native = StringToNative(leaderboardName);
       var result = (ovr_Leaderboard_GetEntries_Native(leaderboardName_native, limit, filter, startAt));
@@ -906,6 +981,16 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Leaderboard_GetEntriesAfterRank")]
     private static extern ulong ovr_Leaderboard_GetEntriesAfterRank_Native(IntPtr leaderboardName, int limit, ulong afterRank);
 
+    public static ulong ovr_Leaderboard_GetEntriesByIds(string leaderboardName, int limit, LeaderboardStartAt startAt, UInt64[] userIDs, uint userIDLength) {
+      IntPtr leaderboardName_native = StringToNative(leaderboardName);
+      var result = (ovr_Leaderboard_GetEntriesByIds_Native(leaderboardName_native, limit, startAt, userIDs, userIDLength));
+      Marshal.FreeCoTaskMem(leaderboardName_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Leaderboard_GetEntriesByIds")]
+    private static extern ulong ovr_Leaderboard_GetEntriesByIds_Native(IntPtr leaderboardName, int limit, LeaderboardStartAt startAt, UInt64[] userIDs, uint userIDLength);
+
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Leaderboard_GetNextEntries(IntPtr handle);
 
@@ -922,8 +1007,15 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Leaderboard_WriteEntry")]
     private static extern ulong ovr_Leaderboard_WriteEntry_Native(IntPtr leaderboardName, long score, byte[] extraData, uint extraDataLength, bool forceUpdate);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Livestreaming_GetStatus();
+    public static ulong ovr_Leaderboard_WriteEntryWithSupplementaryMetric(string leaderboardName, long score, long supplementaryMetric, byte[] extraData, uint extraDataLength, bool forceUpdate) {
+      IntPtr leaderboardName_native = StringToNative(leaderboardName);
+      var result = (ovr_Leaderboard_WriteEntryWithSupplementaryMetric_Native(leaderboardName_native, score, supplementaryMetric, extraData, extraDataLength, forceUpdate));
+      Marshal.FreeCoTaskMem(leaderboardName_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Leaderboard_WriteEntryWithSupplementaryMetric")]
+    private static extern ulong ovr_Leaderboard_WriteEntryWithSupplementaryMetric_Native(IntPtr leaderboardName, long score, long supplementaryMetric, byte[] extraData, uint extraDataLength, bool forceUpdate);
 
     public static ulong ovr_Livestreaming_IsAllowedForApplication(string packageName) {
       IntPtr packageName_native = StringToNative(packageName);
@@ -934,12 +1026,6 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Livestreaming_IsAllowedForApplication")]
     private static extern ulong ovr_Livestreaming_IsAllowedForApplication_Native(IntPtr packageName);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Livestreaming_PauseStream();
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Livestreaming_ResumeStream();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Livestreaming_StartPartyStream();
@@ -954,139 +1040,7 @@ namespace Oculus.Platform
     public static extern ulong ovr_Livestreaming_StopStream();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Livestreaming_UpdateCommentsOverlayVisibility(bool isVisible);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Livestreaming_UpdateMicStatus(LivestreamingMicrophoneStatus micStatus);
-
-    public static ulong ovr_Matchmaking_Browse(string pool, IntPtr customQueryData) {
-      IntPtr pool_native = StringToNative(pool);
-      var result = (ovr_Matchmaking_Browse_Native(pool_native, customQueryData));
-      Marshal.FreeCoTaskMem(pool_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_Browse")]
-    private static extern ulong ovr_Matchmaking_Browse_Native(IntPtr pool, IntPtr customQueryData);
-
-    public static ulong ovr_Matchmaking_Browse2(string pool, IntPtr matchmakingOptions) {
-      IntPtr pool_native = StringToNative(pool);
-      var result = (ovr_Matchmaking_Browse2_Native(pool_native, matchmakingOptions));
-      Marshal.FreeCoTaskMem(pool_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_Browse2")]
-    private static extern ulong ovr_Matchmaking_Browse2_Native(IntPtr pool, IntPtr matchmakingOptions);
-
-    public static ulong ovr_Matchmaking_Cancel(string pool, string requestHash) {
-      IntPtr pool_native = StringToNative(pool);
-      IntPtr requestHash_native = StringToNative(requestHash);
-      var result = (ovr_Matchmaking_Cancel_Native(pool_native, requestHash_native));
-      Marshal.FreeCoTaskMem(pool_native);
-      Marshal.FreeCoTaskMem(requestHash_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_Cancel")]
-    private static extern ulong ovr_Matchmaking_Cancel_Native(IntPtr pool, IntPtr requestHash);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Matchmaking_Cancel2();
-
-    public static ulong ovr_Matchmaking_CreateAndEnqueueRoom(string pool, uint maxUsers, bool subscribeToUpdates, IntPtr customQueryData) {
-      IntPtr pool_native = StringToNative(pool);
-      var result = (ovr_Matchmaking_CreateAndEnqueueRoom_Native(pool_native, maxUsers, subscribeToUpdates, customQueryData));
-      Marshal.FreeCoTaskMem(pool_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_CreateAndEnqueueRoom")]
-    private static extern ulong ovr_Matchmaking_CreateAndEnqueueRoom_Native(IntPtr pool, uint maxUsers, bool subscribeToUpdates, IntPtr customQueryData);
-
-    public static ulong ovr_Matchmaking_CreateAndEnqueueRoom2(string pool, IntPtr matchmakingOptions) {
-      IntPtr pool_native = StringToNative(pool);
-      var result = (ovr_Matchmaking_CreateAndEnqueueRoom2_Native(pool_native, matchmakingOptions));
-      Marshal.FreeCoTaskMem(pool_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_CreateAndEnqueueRoom2")]
-    private static extern ulong ovr_Matchmaking_CreateAndEnqueueRoom2_Native(IntPtr pool, IntPtr matchmakingOptions);
-
-    public static ulong ovr_Matchmaking_CreateRoom(string pool, uint maxUsers, bool subscribeToUpdates) {
-      IntPtr pool_native = StringToNative(pool);
-      var result = (ovr_Matchmaking_CreateRoom_Native(pool_native, maxUsers, subscribeToUpdates));
-      Marshal.FreeCoTaskMem(pool_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_CreateRoom")]
-    private static extern ulong ovr_Matchmaking_CreateRoom_Native(IntPtr pool, uint maxUsers, bool subscribeToUpdates);
-
-    public static ulong ovr_Matchmaking_CreateRoom2(string pool, IntPtr matchmakingOptions) {
-      IntPtr pool_native = StringToNative(pool);
-      var result = (ovr_Matchmaking_CreateRoom2_Native(pool_native, matchmakingOptions));
-      Marshal.FreeCoTaskMem(pool_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_CreateRoom2")]
-    private static extern ulong ovr_Matchmaking_CreateRoom2_Native(IntPtr pool, IntPtr matchmakingOptions);
-
-    public static ulong ovr_Matchmaking_Enqueue(string pool, IntPtr customQueryData) {
-      IntPtr pool_native = StringToNative(pool);
-      var result = (ovr_Matchmaking_Enqueue_Native(pool_native, customQueryData));
-      Marshal.FreeCoTaskMem(pool_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_Enqueue")]
-    private static extern ulong ovr_Matchmaking_Enqueue_Native(IntPtr pool, IntPtr customQueryData);
-
-    public static ulong ovr_Matchmaking_Enqueue2(string pool, IntPtr matchmakingOptions) {
-      IntPtr pool_native = StringToNative(pool);
-      var result = (ovr_Matchmaking_Enqueue2_Native(pool_native, matchmakingOptions));
-      Marshal.FreeCoTaskMem(pool_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_Enqueue2")]
-    private static extern ulong ovr_Matchmaking_Enqueue2_Native(IntPtr pool, IntPtr matchmakingOptions);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Matchmaking_EnqueueRoom(UInt64 roomID, IntPtr customQueryData);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Matchmaking_EnqueueRoom2(UInt64 roomID, IntPtr matchmakingOptions);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Matchmaking_GetAdminSnapshot();
-
-    public static ulong ovr_Matchmaking_GetStats(string pool, uint maxLevel, MatchmakingStatApproach approach) {
-      IntPtr pool_native = StringToNative(pool);
-      var result = (ovr_Matchmaking_GetStats_Native(pool_native, maxLevel, approach));
-      Marshal.FreeCoTaskMem(pool_native);
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_GetStats")]
-    private static extern ulong ovr_Matchmaking_GetStats_Native(IntPtr pool, uint maxLevel, MatchmakingStatApproach approach);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Matchmaking_JoinRoom(UInt64 roomID, bool subscribeToUpdates);
-
-    public static ulong ovr_Matchmaking_ReportResultInsecure(UInt64 roomID, ovrKeyValuePair[] data) {
-      UIntPtr data_length = (UIntPtr)data.Length;
-      var result = (ovr_Matchmaking_ReportResultInsecure_Native(roomID, data, data_length));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Matchmaking_ReportResultInsecure")]
-    private static extern ulong ovr_Matchmaking_ReportResultInsecure_Native(UInt64 roomID, ovrKeyValuePair[] data, UIntPtr numItems);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Matchmaking_StartMatch(UInt64 roomID);
 
     public static ulong ovr_Media_ShareToFacebook(string postTextSuggestion, string filePath, MediaContentType contentType) {
       IntPtr postTextSuggestion_native = StringToNative(postTextSuggestion);
@@ -1101,7 +1055,69 @@ namespace Oculus.Platform
     private static extern ulong ovr_Media_ShareToFacebook_Native(IntPtr postTextSuggestion, IntPtr filePath, MediaContentType contentType);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Notification_GetRoomInvites();
+    public static extern ulong ovr_NetSync_Connect(IntPtr connect_options);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_Disconnect(long connection_id);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_GetSessions(long connection_id);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_GetVoipAttenuation(long connection_id);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_GetVoipAttenuationDefault();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_SetVoipAttenuation(long connection_id, float[] distances, float[] decibels, UIntPtr count);
+
+    public static ulong ovr_NetSync_SetVoipAttenuationModel(long connection_id, string name, float[] distances, float[] decibels, UIntPtr count) {
+      IntPtr name_native = StringToNative(name);
+      var result = (ovr_NetSync_SetVoipAttenuationModel_Native(connection_id, name_native, distances, decibels, count));
+      Marshal.FreeCoTaskMem(name_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_NetSync_SetVoipAttenuationModel")]
+    private static extern ulong ovr_NetSync_SetVoipAttenuationModel_Native(long connection_id, IntPtr name, float[] distances, float[] decibels, UIntPtr count);
+
+    public static ulong ovr_NetSync_SetVoipChannelCfg(long connection_id, string channel_name, string attnmodel, bool disable_spatialization) {
+      IntPtr channel_name_native = StringToNative(channel_name);
+      IntPtr attnmodel_native = StringToNative(attnmodel);
+      var result = (ovr_NetSync_SetVoipChannelCfg_Native(connection_id, channel_name_native, attnmodel_native, disable_spatialization));
+      Marshal.FreeCoTaskMem(channel_name_native);
+      Marshal.FreeCoTaskMem(attnmodel_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_NetSync_SetVoipChannelCfg")]
+    private static extern ulong ovr_NetSync_SetVoipChannelCfg_Native(long connection_id, IntPtr channel_name, IntPtr attnmodel, bool disable_spatialization);
+
+    public static ulong ovr_NetSync_SetVoipGroup(long connection_id, string group_id) {
+      IntPtr group_id_native = StringToNative(group_id);
+      var result = (ovr_NetSync_SetVoipGroup_Native(connection_id, group_id_native));
+      Marshal.FreeCoTaskMem(group_id_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_NetSync_SetVoipGroup")]
+    private static extern ulong ovr_NetSync_SetVoipGroup_Native(long connection_id, IntPtr group_id);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_SetVoipListentoChannels(long connection_id, string[] listento_channels, UIntPtr count);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_SetVoipMicSource(long connection_id, NetSyncVoipMicSource mic_source);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_SetVoipSessionMuted(long connection_id, UInt64 session_id, bool muted);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_SetVoipSpeaktoChannels(long connection_id, string[] speakto_channels, UIntPtr count);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_NetSync_SetVoipStreamMode(long connection_id, UInt64 sessionId, NetSyncVoipStreamMode streamMode);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Notification_MarkAsRead(UInt64 notificationID);
@@ -1139,91 +1155,38 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_RichPresence_Set(IntPtr richPresenceOptions);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_CreateAndJoinPrivate(RoomJoinPolicy joinPolicy, uint maxUsers, bool subscribeToUpdates);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_CreateAndJoinPrivate2(RoomJoinPolicy joinPolicy, uint maxUsers, IntPtr roomOptions);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_Get(UInt64 roomID);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_GetCurrent();
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_GetCurrentForUser(UInt64 userID);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_GetInvitableUsers();
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_GetInvitableUsers2(IntPtr roomOptions);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_GetModeratedRooms();
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_GetSocialRooms(UInt64 appID);
-
-    public static ulong ovr_Room_InviteUser(UInt64 roomID, string inviteToken) {
-      IntPtr inviteToken_native = StringToNative(inviteToken);
-      var result = (ovr_Room_InviteUser_Native(roomID, inviteToken_native));
-      Marshal.FreeCoTaskMem(inviteToken_native);
+    public static ulong ovr_RichPresence_SetDestination(string api_name) {
+      IntPtr api_name_native = StringToNative(api_name);
+      var result = (ovr_RichPresence_SetDestination_Native(api_name_native));
+      Marshal.FreeCoTaskMem(api_name_native);
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Room_InviteUser")]
-    private static extern ulong ovr_Room_InviteUser_Native(UInt64 roomID, IntPtr inviteToken);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RichPresence_SetDestination")]
+    private static extern ulong ovr_RichPresence_SetDestination_Native(IntPtr api_name);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_Join(UInt64 roomID, bool subscribeToUpdates);
+    public static extern ulong ovr_RichPresence_SetIsJoinable(bool is_joinable);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_Join2(UInt64 roomID, IntPtr roomOptions);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_KickUser(UInt64 roomID, UInt64 userID, int kickDurationSeconds);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_LaunchInvitableUserFlow(UInt64 roomID);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_Leave(UInt64 roomID);
-
-    public static ulong ovr_Room_SetDescription(UInt64 roomID, string description) {
-      IntPtr description_native = StringToNative(description);
-      var result = (ovr_Room_SetDescription_Native(roomID, description_native));
-      Marshal.FreeCoTaskMem(description_native);
+    public static ulong ovr_RichPresence_SetLobbySession(string id) {
+      IntPtr id_native = StringToNative(id);
+      var result = (ovr_RichPresence_SetLobbySession_Native(id_native));
+      Marshal.FreeCoTaskMem(id_native);
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Room_SetDescription")]
-    private static extern ulong ovr_Room_SetDescription_Native(UInt64 roomID, IntPtr description);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RichPresence_SetLobbySession")]
+    private static extern ulong ovr_RichPresence_SetLobbySession_Native(IntPtr id);
 
-    public static ulong ovr_Room_UpdateDataStore(UInt64 roomID, ovrKeyValuePair[] data) {
-      UIntPtr data_length = (UIntPtr)data.Length;
-      var result = (ovr_Room_UpdateDataStore_Native(roomID, data, data_length));
+    public static ulong ovr_RichPresence_SetMatchSession(string id) {
+      IntPtr id_native = StringToNative(id);
+      var result = (ovr_RichPresence_SetMatchSession_Native(id_native));
+      Marshal.FreeCoTaskMem(id_native);
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Room_UpdateDataStore")]
-    private static extern ulong ovr_Room_UpdateDataStore_Native(UInt64 roomID, ovrKeyValuePair[] data, UIntPtr numItems);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_UpdateMembershipLockStatus(UInt64 roomID, RoomMembershipLockStatus membershipLockStatus);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_UpdateOwner(UInt64 roomID, UInt64 userID);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_Room_UpdatePrivateRoomJoinPolicy(UInt64 roomID, RoomJoinPolicy newJoinPolicy);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_SystemPermissions_GetStatus(PermissionType permType);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_SystemPermissions_LaunchDeeplink(PermissionType permType);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RichPresence_SetMatchSession")]
+    private static extern ulong ovr_RichPresence_SetMatchSession_Native(IntPtr id);
 
     public static ulong ovr_User_CancelRecordingForReportFlow(string recordingUUID) {
       IntPtr recordingUUID_native = StringToNative(recordingUUID);
@@ -1242,6 +1205,9 @@ namespace Oculus.Platform
     public static extern ulong ovr_User_GetAccessToken();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_User_GetBlockedUsers();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_User_GetLinkedAccounts(IntPtr userOptions);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
@@ -1251,16 +1217,13 @@ namespace Oculus.Platform
     public static extern ulong ovr_User_GetLoggedInUserFriends();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_User_GetLoggedInUserFriendsAndRooms();
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_User_GetLoggedInUserRecentlyMetUsersAndRooms(IntPtr userOptions);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_User_GetOrgScopedID(UInt64 userID);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_User_GetSdkAccounts();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_User_GetUserCapabilities();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_User_GetUserProof();
@@ -1270,9 +1233,6 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_User_LaunchFriendRequestFlow(UInt64 userID);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_User_LaunchProfile(UInt64 userID);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_User_LaunchReportFlow(UInt64 userID);
@@ -1324,6 +1284,82 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_User_TestUserCreateDeviceManifest")]
     private static extern ulong ovr_User_TestUserCreateDeviceManifest_Native(IntPtr deviceID, UInt64[] appIDs, int numAppIDs);
+
+    public static ulong ovr_UserDataStore_PrivateDeleteEntryByKey(UInt64 userID, string key) {
+      IntPtr key_native = StringToNative(key);
+      var result = (ovr_UserDataStore_PrivateDeleteEntryByKey_Native(userID, key_native));
+      Marshal.FreeCoTaskMem(key_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserDataStore_PrivateDeleteEntryByKey")]
+    private static extern ulong ovr_UserDataStore_PrivateDeleteEntryByKey_Native(UInt64 userID, IntPtr key);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_UserDataStore_PrivateGetEntries(UInt64 userID);
+
+    public static ulong ovr_UserDataStore_PrivateGetEntryByKey(UInt64 userID, string key) {
+      IntPtr key_native = StringToNative(key);
+      var result = (ovr_UserDataStore_PrivateGetEntryByKey_Native(userID, key_native));
+      Marshal.FreeCoTaskMem(key_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserDataStore_PrivateGetEntryByKey")]
+    private static extern ulong ovr_UserDataStore_PrivateGetEntryByKey_Native(UInt64 userID, IntPtr key);
+
+    public static ulong ovr_UserDataStore_PrivateWriteEntry(UInt64 userID, string key, string value) {
+      IntPtr key_native = StringToNative(key);
+      IntPtr value_native = StringToNative(value);
+      var result = (ovr_UserDataStore_PrivateWriteEntry_Native(userID, key_native, value_native));
+      Marshal.FreeCoTaskMem(key_native);
+      Marshal.FreeCoTaskMem(value_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserDataStore_PrivateWriteEntry")]
+    private static extern ulong ovr_UserDataStore_PrivateWriteEntry_Native(UInt64 userID, IntPtr key, IntPtr value);
+
+    public static ulong ovr_UserDataStore_PublicDeleteEntryByKey(UInt64 userID, string key) {
+      IntPtr key_native = StringToNative(key);
+      var result = (ovr_UserDataStore_PublicDeleteEntryByKey_Native(userID, key_native));
+      Marshal.FreeCoTaskMem(key_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserDataStore_PublicDeleteEntryByKey")]
+    private static extern ulong ovr_UserDataStore_PublicDeleteEntryByKey_Native(UInt64 userID, IntPtr key);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_UserDataStore_PublicGetEntries(UInt64 userID);
+
+    public static ulong ovr_UserDataStore_PublicGetEntryByKey(UInt64 userID, string key) {
+      IntPtr key_native = StringToNative(key);
+      var result = (ovr_UserDataStore_PublicGetEntryByKey_Native(userID, key_native));
+      Marshal.FreeCoTaskMem(key_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserDataStore_PublicGetEntryByKey")]
+    private static extern ulong ovr_UserDataStore_PublicGetEntryByKey_Native(UInt64 userID, IntPtr key);
+
+    public static ulong ovr_UserDataStore_PublicWriteEntry(UInt64 userID, string key, string value) {
+      IntPtr key_native = StringToNative(key);
+      IntPtr value_native = StringToNative(value);
+      var result = (ovr_UserDataStore_PublicWriteEntry_Native(userID, key_native, value_native));
+      Marshal.FreeCoTaskMem(key_native);
+      Marshal.FreeCoTaskMem(value_native);
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserDataStore_PublicWriteEntry")]
+    private static extern ulong ovr_UserDataStore_PublicWriteEntry_Native(UInt64 userID, IntPtr key, IntPtr value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Voip_GetMicrophoneAvailability();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_Voip_ReportAppVoipSessions(UInt64[] sessionIDs);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Voip_SetSystemVoipSuppressed(bool suppressed);
@@ -1429,7 +1465,64 @@ namespace Oculus.Platform
     private static extern IntPtr ovr_AchievementUpdate_GetName_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern long ovr_AppDownloadProgressResult_GetDownloadBytes(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern long ovr_AppDownloadProgressResult_GetDownloadedBytes(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern AppStatus ovr_AppDownloadProgressResult_GetStatusCode(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern long ovr_AppDownloadResult_GetTimestamp(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UInt64 ovr_Application_GetID(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_ApplicationInvite_GetDestination(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UInt64 ovr_ApplicationInvite_GetID(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_ApplicationInvite_GetIsActive(IntPtr obj);
+
+    public static string ovr_ApplicationInvite_GetLobbySessionId(IntPtr obj) {
+      var result = StringFromNative(ovr_ApplicationInvite_GetLobbySessionId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationInvite_GetLobbySessionId")]
+    private static extern IntPtr ovr_ApplicationInvite_GetLobbySessionId_Native(IntPtr obj);
+
+    public static string ovr_ApplicationInvite_GetMatchSessionId(IntPtr obj) {
+      var result = StringFromNative(ovr_ApplicationInvite_GetMatchSessionId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationInvite_GetMatchSessionId")]
+    private static extern IntPtr ovr_ApplicationInvite_GetMatchSessionId_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_ApplicationInvite_GetRecipient(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_ApplicationInviteArray_GetElement(IntPtr obj, UIntPtr index);
+
+    public static string ovr_ApplicationInviteArray_GetNextUrl(IntPtr obj) {
+      var result = StringFromNative(ovr_ApplicationInviteArray_GetNextUrl_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationInviteArray_GetNextUrl")]
+    private static extern IntPtr ovr_ApplicationInviteArray_GetNextUrl_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UIntPtr ovr_ApplicationInviteArray_GetSize(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_ApplicationInviteArray_HasNextPage(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern int ovr_ApplicationVersion_GetCurrentCode(IntPtr obj);
@@ -1452,6 +1545,17 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationVersion_GetLatestName")]
     private static extern IntPtr ovr_ApplicationVersion_GetLatestName_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern long ovr_ApplicationVersion_GetReleaseDate(IntPtr obj);
+
+    public static string ovr_ApplicationVersion_GetSize(IntPtr obj) {
+      var result = StringFromNative(ovr_ApplicationVersion_GetSize_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationVersion_GetSize")]
+    private static extern IntPtr ovr_ApplicationVersion_GetSize_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UInt64 ovr_AssetDetails_GetAssetId(IntPtr obj);
@@ -1560,173 +1664,190 @@ namespace Oculus.Platform
     public static extern uint ovr_AssetFileDownloadUpdate_GetBytesTotal(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_AssetFileDownloadUpdate_GetBytesTotalLong(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern int ovr_AssetFileDownloadUpdate_GetBytesTransferred(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern long ovr_AssetFileDownloadUpdate_GetBytesTransferredLong(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern bool ovr_AssetFileDownloadUpdate_GetCompleted(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern int ovr_CalApplicationFinalized_GetCountdownMS(IntPtr obj);
+    public static extern bool ovr_AvatarEditorResult_GetRequestSent(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_CalApplicationFinalized_GetID(IntPtr obj);
+    public static extern UInt64 ovr_BlockedUser_GetId(IntPtr obj);
 
-    public static string ovr_CalApplicationFinalized_GetLaunchDetails(IntPtr obj) {
-      var result = StringFromNative(ovr_CalApplicationFinalized_GetLaunchDetails_Native(obj));
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_BlockedUserArray_GetElement(IntPtr obj, UIntPtr index);
+
+    public static string ovr_BlockedUserArray_GetNextUrl(IntPtr obj) {
+      var result = StringFromNative(ovr_BlockedUserArray_GetNextUrl_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CalApplicationFinalized_GetLaunchDetails")]
-    private static extern IntPtr ovr_CalApplicationFinalized_GetLaunchDetails_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_BlockedUserArray_GetNextUrl")]
+    private static extern IntPtr ovr_BlockedUserArray_GetNextUrl_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_CalApplicationProposed_GetID(IntPtr obj);
+    public static extern UIntPtr ovr_BlockedUserArray_GetSize(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_CalApplicationSuggestion_GetID(IntPtr obj);
+    public static extern bool ovr_BlockedUserArray_HasNextPage(IntPtr obj);
 
-    public static string ovr_CalApplicationSuggestion_GetSocialContext(IntPtr obj) {
-      var result = StringFromNative(ovr_CalApplicationSuggestion_GetSocialContext_Native(obj));
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ChallengeCreationType ovr_Challenge_GetCreationType(IntPtr obj);
+
+    public static string ovr_Challenge_GetDescription(IntPtr obj) {
+      var result = StringFromNative(ovr_Challenge_GetDescription_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CalApplicationSuggestion_GetSocialContext")]
-    private static extern IntPtr ovr_CalApplicationSuggestion_GetSocialContext_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Challenge_GetDescription")]
+    private static extern IntPtr ovr_Challenge_GetDescription_Native(IntPtr obj);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_CalApplicationSuggestionArray_GetElement(IntPtr obj, UIntPtr index);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_CalApplicationSuggestionArray_GetSize(IntPtr obj);
-
-    public static string ovr_CloudStorage2UserDirectoryPathResponse_GetPath(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorage2UserDirectoryPathResponse_GetPath_Native(obj));
+    public static DateTime ovr_Challenge_GetEndDate(IntPtr obj) {
+      var result = DateTimeFromNative(ovr_Challenge_GetEndDate_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorage2UserDirectoryPathResponse_GetPath")]
-    private static extern IntPtr ovr_CloudStorage2UserDirectoryPathResponse_GetPath_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Challenge_GetEndDate")]
+    private static extern ulong ovr_Challenge_GetEndDate_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_CloudStorageConflictMetadata_GetLocal(IntPtr obj);
+    public static extern UInt64 ovr_Challenge_GetID(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_CloudStorageConflictMetadata_GetRemote(IntPtr obj);
+    public static extern IntPtr ovr_Challenge_GetInvitedUsers(IntPtr obj);
 
-    public static string ovr_CloudStorageData_GetBucket(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageData_GetBucket_Native(obj));
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Challenge_GetLeaderboard(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Challenge_GetParticipants(IntPtr obj);
+
+    public static DateTime ovr_Challenge_GetStartDate(IntPtr obj) {
+      var result = DateTimeFromNative(ovr_Challenge_GetStartDate_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageData_GetBucket")]
-    private static extern IntPtr ovr_CloudStorageData_GetBucket_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Challenge_GetStartDate")]
+    private static extern ulong ovr_Challenge_GetStartDate_Native(IntPtr obj);
 
-    public static byte[] ovr_CloudStorageData_GetData(IntPtr obj) {
-      var result = FiledataFromNative(ovr_CloudStorageData_GetDataSize(obj), ovr_CloudStorageData_GetData_Native(obj));
+    public static string ovr_Challenge_GetTitle(IntPtr obj) {
+      var result = StringFromNative(ovr_Challenge_GetTitle_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageData_GetData")]
-    private static extern IntPtr ovr_CloudStorageData_GetData_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Challenge_GetTitle")]
+    private static extern IntPtr ovr_Challenge_GetTitle_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_CloudStorageData_GetDataSize(IntPtr obj);
-
-    public static string ovr_CloudStorageData_GetKey(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageData_GetKey_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageData_GetKey")]
-    private static extern IntPtr ovr_CloudStorageData_GetKey_Native(IntPtr obj);
-
-    public static string ovr_CloudStorageMetadata_GetBucket(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageMetadata_GetBucket_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageMetadata_GetBucket")]
-    private static extern IntPtr ovr_CloudStorageMetadata_GetBucket_Native(IntPtr obj);
+    public static extern ChallengeVisibility ovr_Challenge_GetVisibility(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern long ovr_CloudStorageMetadata_GetCounter(IntPtr obj);
+    public static extern IntPtr ovr_ChallengeArray_GetElement(IntPtr obj, UIntPtr index);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_CloudStorageMetadata_GetDataSize(IntPtr obj);
-
-    public static string ovr_CloudStorageMetadata_GetExtraData(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageMetadata_GetExtraData_Native(obj));
+    public static string ovr_ChallengeArray_GetNextUrl(IntPtr obj) {
+      var result = StringFromNative(ovr_ChallengeArray_GetNextUrl_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageMetadata_GetExtraData")]
-    private static extern IntPtr ovr_CloudStorageMetadata_GetExtraData_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeArray_GetNextUrl")]
+    private static extern IntPtr ovr_ChallengeArray_GetNextUrl_Native(IntPtr obj);
 
-    public static string ovr_CloudStorageMetadata_GetKey(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageMetadata_GetKey_Native(obj));
+    public static string ovr_ChallengeArray_GetPreviousUrl(IntPtr obj) {
+      var result = StringFromNative(ovr_ChallengeArray_GetPreviousUrl_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageMetadata_GetKey")]
-    private static extern IntPtr ovr_CloudStorageMetadata_GetKey_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeArray_GetPreviousUrl")]
+    private static extern IntPtr ovr_ChallengeArray_GetPreviousUrl_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_CloudStorageMetadata_GetSaveTime(IntPtr obj);
+    public static extern UIntPtr ovr_ChallengeArray_GetSize(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern CloudStorageDataStatus ovr_CloudStorageMetadata_GetStatus(IntPtr obj);
+    public static extern ulong ovr_ChallengeArray_GetTotalCount(IntPtr obj);
 
-    public static string ovr_CloudStorageMetadata_GetVersionHandle(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageMetadata_GetVersionHandle_Native(obj));
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_ChallengeArray_HasNextPage(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_ChallengeArray_HasPreviousPage(IntPtr obj);
+
+    public static string ovr_ChallengeEntry_GetDisplayScore(IntPtr obj) {
+      var result = StringFromNative(ovr_ChallengeEntry_GetDisplayScore_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageMetadata_GetVersionHandle")]
-    private static extern IntPtr ovr_CloudStorageMetadata_GetVersionHandle_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeEntry_GetDisplayScore")]
+    private static extern IntPtr ovr_ChallengeEntry_GetDisplayScore_Native(IntPtr obj);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_CloudStorageMetadataArray_GetElement(IntPtr obj, UIntPtr index);
-
-    public static string ovr_CloudStorageMetadataArray_GetNextUrl(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageMetadataArray_GetNextUrl_Native(obj));
+    public static byte[] ovr_ChallengeEntry_GetExtraData(IntPtr obj) {
+      var result = BlobFromNative(ovr_LeaderboardEntry_GetExtraDataLength(obj), ovr_ChallengeEntry_GetExtraData_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageMetadataArray_GetNextUrl")]
-    private static extern IntPtr ovr_CloudStorageMetadataArray_GetNextUrl_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeEntry_GetExtraData")]
+    private static extern IntPtr ovr_ChallengeEntry_GetExtraData_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_CloudStorageMetadataArray_GetSize(IntPtr obj);
+    public static extern uint ovr_ChallengeEntry_GetExtraDataLength(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_CloudStorageMetadataArray_HasNextPage(IntPtr obj);
+    public static extern UInt64 ovr_ChallengeEntry_GetID(IntPtr obj);
 
-    public static string ovr_CloudStorageUpdateResponse_GetBucket(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageUpdateResponse_GetBucket_Native(obj));
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern int ovr_ChallengeEntry_GetRank(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern long ovr_ChallengeEntry_GetScore(IntPtr obj);
+
+    public static DateTime ovr_ChallengeEntry_GetTimestamp(IntPtr obj) {
+      var result = DateTimeFromNative(ovr_ChallengeEntry_GetTimestamp_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageUpdateResponse_GetBucket")]
-    private static extern IntPtr ovr_CloudStorageUpdateResponse_GetBucket_Native(IntPtr obj);
-
-    public static string ovr_CloudStorageUpdateResponse_GetKey(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageUpdateResponse_GetKey_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageUpdateResponse_GetKey")]
-    private static extern IntPtr ovr_CloudStorageUpdateResponse_GetKey_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeEntry_GetTimestamp")]
+    private static extern ulong ovr_ChallengeEntry_GetTimestamp_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern CloudStorageUpdateStatus ovr_CloudStorageUpdateResponse_GetStatus(IntPtr obj);
+    public static extern IntPtr ovr_ChallengeEntry_GetUser(IntPtr obj);
 
-    public static string ovr_CloudStorageUpdateResponse_GetVersionHandle(IntPtr obj) {
-      var result = StringFromNative(ovr_CloudStorageUpdateResponse_GetVersionHandle_Native(obj));
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_ChallengeEntryArray_GetElement(IntPtr obj, UIntPtr index);
+
+    public static string ovr_ChallengeEntryArray_GetNextUrl(IntPtr obj) {
+      var result = StringFromNative(ovr_ChallengeEntryArray_GetNextUrl_Native(obj));
       return result;
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_CloudStorageUpdateResponse_GetVersionHandle")]
-    private static extern IntPtr ovr_CloudStorageUpdateResponse_GetVersionHandle_Native(IntPtr obj);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeEntryArray_GetNextUrl")]
+    private static extern IntPtr ovr_ChallengeEntryArray_GetNextUrl_Native(IntPtr obj);
+
+    public static string ovr_ChallengeEntryArray_GetPreviousUrl(IntPtr obj) {
+      var result = StringFromNative(ovr_ChallengeEntryArray_GetPreviousUrl_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeEntryArray_GetPreviousUrl")]
+    private static extern IntPtr ovr_ChallengeEntryArray_GetPreviousUrl_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UIntPtr ovr_ChallengeEntryArray_GetSize(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern ulong ovr_ChallengeEntryArray_GetTotalCount(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_ChallengeEntryArray_HasNextPage(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_ChallengeEntryArray_HasPreviousPage(IntPtr obj);
 
     public static uint ovr_DataStore_Contains(IntPtr obj, string key) {
       IntPtr key_native = StringToNative(key);
@@ -1822,6 +1943,62 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Error_GetMessage")]
     private static extern IntPtr ovr_Error_GetMessage_Native(IntPtr obj);
 
+    public static string ovr_GroupPresenceJoinIntent_GetDeeplinkMessage(IntPtr obj) {
+      var result = StringFromNative(ovr_GroupPresenceJoinIntent_GetDeeplinkMessage_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceJoinIntent_GetDeeplinkMessage")]
+    private static extern IntPtr ovr_GroupPresenceJoinIntent_GetDeeplinkMessage_Native(IntPtr obj);
+
+    public static string ovr_GroupPresenceJoinIntent_GetDestinationApiName(IntPtr obj) {
+      var result = StringFromNative(ovr_GroupPresenceJoinIntent_GetDestinationApiName_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceJoinIntent_GetDestinationApiName")]
+    private static extern IntPtr ovr_GroupPresenceJoinIntent_GetDestinationApiName_Native(IntPtr obj);
+
+    public static string ovr_GroupPresenceJoinIntent_GetLobbySessionId(IntPtr obj) {
+      var result = StringFromNative(ovr_GroupPresenceJoinIntent_GetLobbySessionId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceJoinIntent_GetLobbySessionId")]
+    private static extern IntPtr ovr_GroupPresenceJoinIntent_GetLobbySessionId_Native(IntPtr obj);
+
+    public static string ovr_GroupPresenceJoinIntent_GetMatchSessionId(IntPtr obj) {
+      var result = StringFromNative(ovr_GroupPresenceJoinIntent_GetMatchSessionId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceJoinIntent_GetMatchSessionId")]
+    private static extern IntPtr ovr_GroupPresenceJoinIntent_GetMatchSessionId_Native(IntPtr obj);
+
+    public static string ovr_GroupPresenceLeaveIntent_GetDestinationApiName(IntPtr obj) {
+      var result = StringFromNative(ovr_GroupPresenceLeaveIntent_GetDestinationApiName_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceLeaveIntent_GetDestinationApiName")]
+    private static extern IntPtr ovr_GroupPresenceLeaveIntent_GetDestinationApiName_Native(IntPtr obj);
+
+    public static string ovr_GroupPresenceLeaveIntent_GetLobbySessionId(IntPtr obj) {
+      var result = StringFromNative(ovr_GroupPresenceLeaveIntent_GetLobbySessionId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceLeaveIntent_GetLobbySessionId")]
+    private static extern IntPtr ovr_GroupPresenceLeaveIntent_GetLobbySessionId_Native(IntPtr obj);
+
+    public static string ovr_GroupPresenceLeaveIntent_GetMatchSessionId(IntPtr obj) {
+      var result = StringFromNative(ovr_GroupPresenceLeaveIntent_GetMatchSessionId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceLeaveIntent_GetMatchSessionId")]
+    private static extern IntPtr ovr_GroupPresenceLeaveIntent_GetMatchSessionId_Native(IntPtr obj);
+
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_HttpTransferUpdate_GetBytes(IntPtr obj);
 
@@ -1875,6 +2052,9 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UIntPtr ovr_InstalledApplicationArray_GetSize(IntPtr obj);
 
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_InvitePanelResultInfo_GetInvitesSent(IntPtr obj);
+
     public static string ovr_LanguagePackInfo_GetEnglishName(IntPtr obj) {
       var result = StringFromNative(ovr_LanguagePackInfo_GetEnglishName_Native(obj));
       return result;
@@ -1913,6 +2093,14 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_LaunchDetails_GetDeeplinkMessage")]
     private static extern IntPtr ovr_LaunchDetails_GetDeeplinkMessage_Native(IntPtr obj);
 
+    public static string ovr_LaunchDetails_GetDestinationApiName(IntPtr obj) {
+      var result = StringFromNative(ovr_LaunchDetails_GetDestinationApiName_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_LaunchDetails_GetDestinationApiName")]
+    private static extern IntPtr ovr_LaunchDetails_GetDestinationApiName_Native(IntPtr obj);
+
     public static string ovr_LaunchDetails_GetLaunchSource(IntPtr obj) {
       var result = StringFromNative(ovr_LaunchDetails_GetLaunchSource_Native(obj));
       return result;
@@ -1924,8 +2112,13 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern LaunchType ovr_LaunchDetails_GetLaunchType(IntPtr obj);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_LaunchDetails_GetRoomID(IntPtr obj);
+    public static string ovr_LaunchDetails_GetTrackingID(IntPtr obj) {
+      var result = StringFromNative(ovr_LaunchDetails_GetTrackingID_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_LaunchDetails_GetTrackingID")]
+    private static extern IntPtr ovr_LaunchDetails_GetTrackingID_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_LaunchDetails_GetUsers(IntPtr obj);
@@ -1935,6 +2128,9 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern bool ovr_LaunchFriendRequestFlowResult_GetDidSendRequest(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_LaunchInvitePanelFlowResult_GetInvitedUsers(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern bool ovr_LaunchReportFlowResult_GetDidCancel(IntPtr obj);
@@ -1948,6 +2144,45 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern bool ovr_LaunchUnblockFlowResult_GetDidUnblock(IntPtr obj);
 
+    public static string ovr_Leaderboard_GetApiName(IntPtr obj) {
+      var result = StringFromNative(ovr_Leaderboard_GetApiName_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Leaderboard_GetApiName")]
+    private static extern IntPtr ovr_Leaderboard_GetApiName_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Leaderboard_GetDestination(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UInt64 ovr_Leaderboard_GetID(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_LeaderboardArray_GetElement(IntPtr obj, UIntPtr index);
+
+    public static string ovr_LeaderboardArray_GetNextUrl(IntPtr obj) {
+      var result = StringFromNative(ovr_LeaderboardArray_GetNextUrl_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_LeaderboardArray_GetNextUrl")]
+    private static extern IntPtr ovr_LeaderboardArray_GetNextUrl_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UIntPtr ovr_LeaderboardArray_GetSize(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_LeaderboardArray_HasNextPage(IntPtr obj);
+
+    public static string ovr_LeaderboardEntry_GetDisplayScore(IntPtr obj) {
+      var result = StringFromNative(ovr_LeaderboardEntry_GetDisplayScore_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_LeaderboardEntry_GetDisplayScore")]
+    private static extern IntPtr ovr_LeaderboardEntry_GetDisplayScore_Native(IntPtr obj);
+
     public static byte[] ovr_LeaderboardEntry_GetExtraData(IntPtr obj) {
       var result = BlobFromNative(ovr_LeaderboardEntry_GetExtraDataLength(obj), ovr_LeaderboardEntry_GetExtraData_Native(obj));
       return result;
@@ -1960,10 +2195,16 @@ namespace Oculus.Platform
     public static extern uint ovr_LeaderboardEntry_GetExtraDataLength(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UInt64 ovr_LeaderboardEntry_GetID(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern int ovr_LeaderboardEntry_GetRank(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern long ovr_LeaderboardEntry_GetScore(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_LeaderboardEntry_GetSupplementaryMetric(IntPtr obj);
 
     public static DateTime ovr_LeaderboardEntry_GetTimestamp(IntPtr obj) {
       var result = DateTimeFromNative(ovr_LeaderboardEntry_GetTimestamp_Native(obj));
@@ -2009,6 +2250,12 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern bool ovr_LeaderboardUpdateStatus_GetDidUpdate(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UInt64 ovr_LeaderboardUpdateStatus_GetUpdatedChallengeId(IntPtr obj, uint index);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern uint ovr_LeaderboardUpdateStatus_GetUpdatedChallengeIdsSize(IntPtr obj);
 
     public static string ovr_LinkedAccount_GetAccessToken(IntPtr obj) {
       var result = StringFromNative(ovr_LinkedAccount_GetAccessToken_Native(obj));
@@ -2071,174 +2318,6 @@ namespace Oculus.Platform
     private static extern IntPtr ovr_LivestreamingVideoStats_GetTotalViews_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingAdminSnapshot_GetCandidates(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern double ovr_MatchmakingAdminSnapshot_GetMyCurrentThreshold(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_MatchmakingAdminSnapshotCandidate_GetCanMatch(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern double ovr_MatchmakingAdminSnapshotCandidate_GetMyTotalScore(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern double ovr_MatchmakingAdminSnapshotCandidate_GetTheirCurrentThreshold(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern double ovr_MatchmakingAdminSnapshotCandidate_GetTheirTotalScore(IntPtr obj);
-
-    public static string ovr_MatchmakingAdminSnapshotCandidate_GetTraceId(IntPtr obj) {
-      var result = StringFromNative(ovr_MatchmakingAdminSnapshotCandidate_GetTraceId_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingAdminSnapshotCandidate_GetTraceId")]
-    private static extern IntPtr ovr_MatchmakingAdminSnapshotCandidate_GetTraceId_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingAdminSnapshotCandidateArray_GetElement(IntPtr obj, UIntPtr index);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_MatchmakingAdminSnapshotCandidateArray_GetSize(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingBrowseResult_GetEnqueueResult(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingBrowseResult_GetRooms(IntPtr obj);
-
-    public static string ovr_MatchmakingCandidate_GetEntryHash(IntPtr obj) {
-      var result = StringFromNative(ovr_MatchmakingCandidate_GetEntryHash_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingCandidate_GetEntryHash")]
-    private static extern IntPtr ovr_MatchmakingCandidate_GetEntryHash_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_MatchmakingCandidate_GetUserId(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingCandidateArray_GetElement(IntPtr obj, UIntPtr index);
-
-    public static string ovr_MatchmakingCandidateArray_GetNextUrl(IntPtr obj) {
-      var result = StringFromNative(ovr_MatchmakingCandidateArray_GetNextUrl_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingCandidateArray_GetNextUrl")]
-    private static extern IntPtr ovr_MatchmakingCandidateArray_GetNextUrl_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_MatchmakingCandidateArray_GetSize(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_MatchmakingCandidateArray_HasNextPage(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingEnqueueResult_GetAdminSnapshot(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingEnqueueResult_GetAverageWait(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingEnqueueResult_GetMatchesInLastHourCount(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingEnqueueResult_GetMaxExpectedWait(IntPtr obj);
-
-    public static string ovr_MatchmakingEnqueueResult_GetPool(IntPtr obj) {
-      var result = StringFromNative(ovr_MatchmakingEnqueueResult_GetPool_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingEnqueueResult_GetPool")]
-    private static extern IntPtr ovr_MatchmakingEnqueueResult_GetPool_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingEnqueueResult_GetRecentMatchPercentage(IntPtr obj);
-
-    public static string ovr_MatchmakingEnqueueResult_GetRequestHash(IntPtr obj) {
-      var result = StringFromNative(ovr_MatchmakingEnqueueResult_GetRequestHash_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingEnqueueResult_GetRequestHash")]
-    private static extern IntPtr ovr_MatchmakingEnqueueResult_GetRequestHash_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingEnqueueResultAndRoom_GetMatchmakingEnqueueResult(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingEnqueueResultAndRoom_GetRoom(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_MatchmakingEnqueuedUser_GetAdditionalUserID(IntPtr obj, uint index);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingEnqueuedUser_GetAdditionalUserIDsSize(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingEnqueuedUser_GetCustomData(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingEnqueuedUser_GetUser(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingEnqueuedUserArray_GetElement(IntPtr obj, UIntPtr index);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_MatchmakingEnqueuedUserArray_GetSize(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_MatchmakingNotification_GetAddedByUserId(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingNotification_GetRoom(IntPtr obj);
-
-    public static string ovr_MatchmakingNotification_GetTraceId(IntPtr obj) {
-      var result = StringFromNative(ovr_MatchmakingNotification_GetTraceId_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingNotification_GetTraceId")]
-    private static extern IntPtr ovr_MatchmakingNotification_GetTraceId_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingRoom_GetPingTime(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingRoom_GetRoom(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_MatchmakingRoom_HasPingTime(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingRoomArray_GetElement(IntPtr obj, UIntPtr index);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_MatchmakingRoomArray_GetSize(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingStats_GetDrawCount(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingStats_GetLossCount(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingStats_GetSkillLevel(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern double ovr_MatchmakingStats_GetSkillMean(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern double ovr_MatchmakingStats_GetSkillStandardDeviation(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_MatchmakingStats_GetWinCount(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetAbuseReportRecording(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
@@ -2249,6 +2328,15 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetAchievementUpdate(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetAppDownloadProgressResult(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetAppDownloadResult(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetApplicationInviteArray(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetApplicationVersion(IntPtr obj);
@@ -2272,28 +2360,22 @@ namespace Oculus.Platform
     public static extern IntPtr ovr_Message_GetAssetFileDownloadUpdate(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetCalApplicationFinalized(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetAvatarEditorResult(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetCalApplicationProposed(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetBlockedUserArray(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetCalApplicationSuggestionArray(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetChallenge(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetCloudStorageConflictMetadata(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetChallengeArray(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetCloudStorageData(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetChallengeEntryArray(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetCloudStorageMetadata(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetCloudStorageMetadataArray(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetCloudStorageUpdateResponse(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetDataStore(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetDestinationArray(IntPtr obj);
@@ -2302,10 +2384,19 @@ namespace Oculus.Platform
     public static extern IntPtr ovr_Message_GetError(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetGroupPresenceJoinIntent(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetGroupPresenceLeaveIntent(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetHttpTransferUpdate(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetInstalledApplicationArray(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetInvitePanelResultInfo(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetLaunchBlockFlowResult(IntPtr obj);
@@ -2314,10 +2405,16 @@ namespace Oculus.Platform
     public static extern IntPtr ovr_Message_GetLaunchFriendRequestFlowResult(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetLaunchInvitePanelFlowResult(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetLaunchReportFlowResult(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetLaunchUnblockFlowResult(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetLeaderboardArray(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetLeaderboardEntryArray(IntPtr obj);
@@ -2341,28 +2438,25 @@ namespace Oculus.Platform
     public static extern IntPtr ovr_Message_GetLivestreamingVideoStats(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetMatchmakingAdminSnapshot(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetMatchmakingBrowseResult(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetMatchmakingEnqueueResult(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetMatchmakingEnqueueResultAndRoom(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetMatchmakingRoomArray(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetMatchmakingStats(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetMicrophoneAvailabilityState(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetNativeMessage(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetNetworkingPeer(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetNetSyncConnection(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetNetSyncSessionArray(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetNetSyncSessionsChangedNotification(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetNetSyncSetSessionPropertyResult(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetNetSyncVoipAttenuationValueArray(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetOrgScopedID(IntPtr obj);
@@ -2380,9 +2474,6 @@ namespace Oculus.Platform
     public static extern IntPtr ovr_Message_GetPidArray(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetPingResult(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetPlatformInitialize(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
@@ -2395,22 +2486,16 @@ namespace Oculus.Platform
     public static extern IntPtr ovr_Message_GetPurchaseArray(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetRejoinDialogResult(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ulong ovr_Message_GetRequestID(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetRoom(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetRoomArray(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetRoomInviteNotification(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetRoomInviteNotificationArray(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetSdkAccountArray(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetSendInvitesResult(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetShareMediaResult(IntPtr obj);
@@ -2424,9 +2509,6 @@ namespace Oculus.Platform
     private static extern IntPtr ovr_Message_GetString_Native(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetSystemPermission(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetSystemVoipState(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
@@ -2436,10 +2518,13 @@ namespace Oculus.Platform
     public static extern IntPtr ovr_Message_GetUser(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetUserAndRoomArray(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetUserArray(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Message_GetUserArray(IntPtr obj);
+    public static extern IntPtr ovr_Message_GetUserCapabilityArray(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_Message_GetUserDataStoreUpdateResponse(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Message_GetUserProof(IntPtr obj);
@@ -2475,10 +2560,74 @@ namespace Oculus.Platform
     public static extern void ovr_Microphone_Stop(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_NetworkingPeer_GetID(IntPtr obj);
+    public static extern bool ovr_MicrophoneAvailabilityState_GetMicrophoneAvailable(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern PeerConnectionState ovr_NetworkingPeer_GetState(IntPtr obj);
+    public static extern long ovr_NetSyncConnection_GetConnectionId(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern NetSyncDisconnectReason ovr_NetSyncConnection_GetDisconnectReason(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UInt64 ovr_NetSyncConnection_GetSessionId(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern NetSyncConnectionStatus ovr_NetSyncConnection_GetStatus(IntPtr obj);
+
+    public static string ovr_NetSyncConnection_GetZoneId(IntPtr obj) {
+      var result = StringFromNative(ovr_NetSyncConnection_GetZoneId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_NetSyncConnection_GetZoneId")]
+    private static extern IntPtr ovr_NetSyncConnection_GetZoneId_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern long ovr_NetSyncSession_GetConnectionId(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_NetSyncSession_GetMuted(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UInt64 ovr_NetSyncSession_GetSessionId(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UInt64 ovr_NetSyncSession_GetUserId(IntPtr obj);
+
+    public static string ovr_NetSyncSession_GetVoipGroup(IntPtr obj) {
+      var result = StringFromNative(ovr_NetSyncSession_GetVoipGroup_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_NetSyncSession_GetVoipGroup")]
+    private static extern IntPtr ovr_NetSyncSession_GetVoipGroup_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_NetSyncSessionArray_GetElement(IntPtr obj, UIntPtr index);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UIntPtr ovr_NetSyncSessionArray_GetSize(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern long ovr_NetSyncSessionsChangedNotification_GetConnectionId(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_NetSyncSessionsChangedNotification_GetSessions(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_NetSyncSetSessionPropertyResult_GetSession(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern float ovr_NetSyncVoipAttenuationValue_GetDecibels(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern float ovr_NetSyncVoipAttenuationValue_GetDistance(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_NetSyncVoipAttenuationValueArray_GetElement(IntPtr obj, UIntPtr index);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UIntPtr ovr_NetSyncVoipAttenuationValueArray_GetSize(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UInt64 ovr_OrgScopedID_GetID(IntPtr obj);
@@ -2488,9 +2637,6 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Packet_GetBytes(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern SendPolicy ovr_Packet_GetSendPolicy(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UInt64 ovr_Packet_GetSenderID(IntPtr obj);
@@ -2506,9 +2652,6 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Party_GetLeader(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Party_GetRoom(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_Party_GetUsers(IntPtr obj);
@@ -2565,15 +2708,6 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UIntPtr ovr_PidArray_GetSize(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_PingResult_GetID(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern ulong ovr_PingResult_GetPingTimeUsec(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_PingResult_IsTimeout(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern PlatformInitializeResult ovr_PlatformInitialize_GetResult(IntPtr obj);
@@ -2646,6 +2780,14 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern bool ovr_ProductArray_HasNextPage(IntPtr obj);
 
+    public static string ovr_Purchase_GetDeveloperPayload(IntPtr obj) {
+      var result = StringFromNative(ovr_Purchase_GetDeveloperPayload_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Purchase_GetDeveloperPayload")]
+    private static extern IntPtr ovr_Purchase_GetDeveloperPayload_Native(IntPtr obj);
+
     public static DateTime ovr_Purchase_GetExpirationTime(IntPtr obj) {
       var result = DateTimeFromNative(ovr_Purchase_GetExpirationTime_Native(obj));
       return result;
@@ -2664,6 +2806,22 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UInt64 ovr_Purchase_GetPurchaseID(IntPtr obj);
+
+    public static string ovr_Purchase_GetPurchaseStrID(IntPtr obj) {
+      var result = StringFromNative(ovr_Purchase_GetPurchaseStrID_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Purchase_GetPurchaseStrID")]
+    private static extern IntPtr ovr_Purchase_GetPurchaseStrID_Native(IntPtr obj);
+
+    public static string ovr_Purchase_GetReportingId(IntPtr obj) {
+      var result = StringFromNative(ovr_Purchase_GetReportingId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Purchase_GetReportingId")]
+    private static extern IntPtr ovr_Purchase_GetReportingId_Native(IntPtr obj);
 
     public static string ovr_Purchase_GetSKU(IntPtr obj) {
       var result = StringFromNative(ovr_Purchase_GetSKU_Native(obj));
@@ -2691,113 +2849,7 @@ namespace Oculus.Platform
     public static extern bool ovr_PurchaseArray_HasNextPage(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_Room_GetApplicationID(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Room_GetDataStore(IntPtr obj);
-
-    public static string ovr_Room_GetDescription(IntPtr obj) {
-      var result = StringFromNative(ovr_Room_GetDescription_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Room_GetDescription")]
-    private static extern IntPtr ovr_Room_GetDescription_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_Room_GetID(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Room_GetInvitedUsers(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_Room_GetIsMembershipLocked(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern RoomJoinPolicy ovr_Room_GetJoinPolicy(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern RoomJoinability ovr_Room_GetJoinability(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Room_GetMatchedUsers(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_Room_GetMaxUsers(IntPtr obj);
-
-    public static string ovr_Room_GetName(IntPtr obj) {
-      var result = StringFromNative(ovr_Room_GetName_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Room_GetName")]
-    private static extern IntPtr ovr_Room_GetName_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Room_GetOwner(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Room_GetTeams(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern RoomType ovr_Room_GetType(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Room_GetUsers(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern uint ovr_Room_GetVersion(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_RoomArray_GetElement(IntPtr obj, UIntPtr index);
-
-    public static string ovr_RoomArray_GetNextUrl(IntPtr obj) {
-      var result = StringFromNative(ovr_RoomArray_GetNextUrl_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RoomArray_GetNextUrl")]
-    private static extern IntPtr ovr_RoomArray_GetNextUrl_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_RoomArray_GetSize(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_RoomArray_HasNextPage(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_RoomInviteNotification_GetID(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_RoomInviteNotification_GetRoomID(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UInt64 ovr_RoomInviteNotification_GetSenderID(IntPtr obj);
-
-    public static DateTime ovr_RoomInviteNotification_GetSentTime(IntPtr obj) {
-      var result = DateTimeFromNative(ovr_RoomInviteNotification_GetSentTime_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RoomInviteNotification_GetSentTime")]
-    private static extern ulong ovr_RoomInviteNotification_GetSentTime_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_RoomInviteNotificationArray_GetElement(IntPtr obj, UIntPtr index);
-
-    public static string ovr_RoomInviteNotificationArray_GetNextUrl(IntPtr obj) {
-      var result = StringFromNative(ovr_RoomInviteNotificationArray_GetNextUrl_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RoomInviteNotificationArray_GetNextUrl")]
-    private static extern IntPtr ovr_RoomInviteNotificationArray_GetNextUrl_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_RoomInviteNotificationArray_GetSize(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_RoomInviteNotificationArray_HasNextPage(IntPtr obj);
+    public static extern bool ovr_RejoinDialogResult_GetRejoinSelected(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern SdkAccountType ovr_SdkAccount_GetAccountType(IntPtr obj);
@@ -2812,42 +2864,22 @@ namespace Oculus.Platform
     public static extern UIntPtr ovr_SdkAccountArray_GetSize(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_SendInvitesResult_GetInvites(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern ShareMediaStatus ovr_ShareMediaResult_GetStatus(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_SystemPermission_GetHasPermission(IntPtr obj);
+    public static extern UInt64 ovr_SupplementaryMetric_GetID(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern PermissionGrantStatus ovr_SystemPermission_GetPermissionGrantStatus(IntPtr obj);
+    public static extern long ovr_SupplementaryMetric_GetMetric(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern VoipMuteState ovr_SystemVoipState_GetMicrophoneMuted(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern SystemVoipStatus ovr_SystemVoipState_GetStatus(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_Team_GetAssignedUsers(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern int ovr_Team_GetMaxUsers(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern int ovr_Team_GetMinUsers(IntPtr obj);
-
-    public static string ovr_Team_GetName(IntPtr obj) {
-      var result = StringFromNative(ovr_Team_GetName_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_Team_GetName")]
-    private static extern IntPtr ovr_Team_GetName_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_TeamArray_GetElement(IntPtr obj, UIntPtr index);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_TeamArray_GetSize(IntPtr obj);
 
     public static string ovr_TestUser_GetAccessToken(IntPtr obj) {
       var result = StringFromNative(ovr_TestUser_GetAccessToken_Native(obj));
@@ -2908,6 +2940,14 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UIntPtr ovr_TestUserAppAccessArray_GetSize(IntPtr obj);
 
+    public static string ovr_User_GetDisplayName(IntPtr obj) {
+      var result = StringFromNative(ovr_User_GetDisplayName_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_User_GetDisplayName")]
+    private static extern IntPtr ovr_User_GetDisplayName_Native(IntPtr obj);
+
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UInt64 ovr_User_GetID(IntPtr obj);
 
@@ -2918,14 +2958,6 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_User_GetImageUrl")]
     private static extern IntPtr ovr_User_GetImageUrl_Native(IntPtr obj);
-
-    public static string ovr_User_GetInviteToken(IntPtr obj) {
-      var result = StringFromNative(ovr_User_GetInviteToken_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_User_GetInviteToken")]
-    private static extern IntPtr ovr_User_GetInviteToken_Native(IntPtr obj);
 
     public static string ovr_User_GetOculusID(IntPtr obj) {
       var result = StringFromNative(ovr_User_GetOculusID_Native(obj));
@@ -2951,6 +2983,30 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_User_GetPresenceDeeplinkMessage")]
     private static extern IntPtr ovr_User_GetPresenceDeeplinkMessage_Native(IntPtr obj);
 
+    public static string ovr_User_GetPresenceDestinationApiName(IntPtr obj) {
+      var result = StringFromNative(ovr_User_GetPresenceDestinationApiName_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_User_GetPresenceDestinationApiName")]
+    private static extern IntPtr ovr_User_GetPresenceDestinationApiName_Native(IntPtr obj);
+
+    public static string ovr_User_GetPresenceLobbySessionId(IntPtr obj) {
+      var result = StringFromNative(ovr_User_GetPresenceLobbySessionId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_User_GetPresenceLobbySessionId")]
+    private static extern IntPtr ovr_User_GetPresenceLobbySessionId_Native(IntPtr obj);
+
+    public static string ovr_User_GetPresenceMatchSessionId(IntPtr obj) {
+      var result = StringFromNative(ovr_User_GetPresenceMatchSessionId_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_User_GetPresenceMatchSessionId")]
+    private static extern IntPtr ovr_User_GetPresenceMatchSessionId_Native(IntPtr obj);
+
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern UserPresenceStatus ovr_User_GetPresenceStatus(IntPtr obj);
 
@@ -2961,29 +3017,6 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_User_GetSmallImageUrl")]
     private static extern IntPtr ovr_User_GetSmallImageUrl_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_UserAndRoom_GetRoom(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_UserAndRoom_GetUser(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_UserAndRoomArray_GetElement(IntPtr obj, UIntPtr index);
-
-    public static string ovr_UserAndRoomArray_GetNextUrl(IntPtr obj) {
-      var result = StringFromNative(ovr_UserAndRoomArray_GetNextUrl_Native(obj));
-      return result;
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserAndRoomArray_GetNextUrl")]
-    private static extern IntPtr ovr_UserAndRoomArray_GetNextUrl_Native(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern UIntPtr ovr_UserAndRoomArray_GetSize(IntPtr obj);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern bool ovr_UserAndRoomArray_HasNextPage(IntPtr obj);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_UserArray_GetElement(IntPtr obj, UIntPtr index);
@@ -3001,6 +3034,53 @@ namespace Oculus.Platform
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern bool ovr_UserArray_HasNextPage(IntPtr obj);
+
+    public static string ovr_UserCapability_GetDescription(IntPtr obj) {
+      var result = StringFromNative(ovr_UserCapability_GetDescription_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserCapability_GetDescription")]
+    private static extern IntPtr ovr_UserCapability_GetDescription_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_UserCapability_GetIsEnabled(IntPtr obj);
+
+    public static string ovr_UserCapability_GetName(IntPtr obj) {
+      var result = StringFromNative(ovr_UserCapability_GetName_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserCapability_GetName")]
+    private static extern IntPtr ovr_UserCapability_GetName_Native(IntPtr obj);
+
+    public static string ovr_UserCapability_GetReasonCode(IntPtr obj) {
+      var result = StringFromNative(ovr_UserCapability_GetReasonCode_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserCapability_GetReasonCode")]
+    private static extern IntPtr ovr_UserCapability_GetReasonCode_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_UserCapabilityArray_GetElement(IntPtr obj, UIntPtr index);
+
+    public static string ovr_UserCapabilityArray_GetNextUrl(IntPtr obj) {
+      var result = StringFromNative(ovr_UserCapabilityArray_GetNextUrl_Native(obj));
+      return result;
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_UserCapabilityArray_GetNextUrl")]
+    private static extern IntPtr ovr_UserCapabilityArray_GetNextUrl_Native(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern UIntPtr ovr_UserCapabilityArray_GetSize(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_UserCapabilityArray_HasNextPage(IntPtr obj);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern bool ovr_UserDataStoreUpdateResponse_GetSuccess(IntPtr obj);
 
     public static string ovr_UserProof_GetNonce(IntPtr obj) {
       var result = StringFromNative(ovr_UserProof_GetNonce_Native(obj));
@@ -3044,6 +3124,47 @@ namespace Oculus.Platform
     public static extern void ovr_AbuseReportOptions_SetReportType(IntPtr handle, AbuseReportType value);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_AdvancedAbuseReportOptions_Create();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_AdvancedAbuseReportOptions_Destroy(IntPtr handle);
+
+    public static void ovr_AdvancedAbuseReportOptions_SetDeveloperDefinedContextString(IntPtr handle, string key, string value) {
+      IntPtr key_native = StringToNative(key);
+      IntPtr value_native = StringToNative(value);
+      ovr_AdvancedAbuseReportOptions_SetDeveloperDefinedContextString_Native(handle, key_native, value_native);
+      Marshal.FreeCoTaskMem(key_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_AdvancedAbuseReportOptions_SetDeveloperDefinedContextString")]
+    private static extern void ovr_AdvancedAbuseReportOptions_SetDeveloperDefinedContextString_Native(IntPtr handle, IntPtr key, IntPtr value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_AdvancedAbuseReportOptions_ClearDeveloperDefinedContext(IntPtr handle);
+
+    public static void ovr_AdvancedAbuseReportOptions_SetObjectType(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_AdvancedAbuseReportOptions_SetObjectType_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_AdvancedAbuseReportOptions_SetObjectType")]
+    private static extern void ovr_AdvancedAbuseReportOptions_SetObjectType_Native(IntPtr handle, IntPtr value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_AdvancedAbuseReportOptions_SetReportType(IntPtr handle, AbuseReportType value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_AdvancedAbuseReportOptions_AddSuggestedUser(IntPtr handle, UInt64 value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_AdvancedAbuseReportOptions_ClearSuggestedUsers(IntPtr handle);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_AdvancedAbuseReportOptions_SetVideoMode(IntPtr handle, AbuseReportVideoMode value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_ApplicationOptions_Create();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
@@ -3058,81 +3179,207 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationOptions_SetDeeplinkMessage")]
     private static extern void ovr_ApplicationOptions_SetDeeplinkMessage_Native(IntPtr handle, IntPtr value);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_MatchmakingOptions_Create();
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_MatchmakingOptions_Destroy(IntPtr handle);
-
-    public static void ovr_MatchmakingOptions_SetCreateRoomDataStoreString(IntPtr handle, string key, string value) {
-      IntPtr key_native = StringToNative(key);
+    public static void ovr_ApplicationOptions_SetDestinationApiName(IntPtr handle, string value) {
       IntPtr value_native = StringToNative(value);
-      ovr_MatchmakingOptions_SetCreateRoomDataStoreString_Native(handle, key_native, value_native);
-      Marshal.FreeCoTaskMem(key_native);
+      ovr_ApplicationOptions_SetDestinationApiName_Native(handle, value_native);
       Marshal.FreeCoTaskMem(value_native);
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingOptions_SetCreateRoomDataStoreString")]
-    private static extern void ovr_MatchmakingOptions_SetCreateRoomDataStoreString_Native(IntPtr handle, IntPtr key, IntPtr value);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationOptions_SetDestinationApiName")]
+    private static extern void ovr_ApplicationOptions_SetDestinationApiName_Native(IntPtr handle, IntPtr value);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_MatchmakingOptions_ClearCreateRoomDataStore(IntPtr handle);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_MatchmakingOptions_SetCreateRoomJoinPolicy(IntPtr handle, RoomJoinPolicy value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_MatchmakingOptions_SetCreateRoomMaxUsers(IntPtr handle, uint value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_MatchmakingOptions_AddEnqueueAdditionalUser(IntPtr handle, UInt64 value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_MatchmakingOptions_ClearEnqueueAdditionalUsers(IntPtr handle);
-
-    public static void ovr_MatchmakingOptions_SetEnqueueDataSettingsInt(IntPtr handle, string key, int value) {
-      IntPtr key_native = StringToNative(key);
-      ovr_MatchmakingOptions_SetEnqueueDataSettingsInt_Native(handle, key_native, value);
-      Marshal.FreeCoTaskMem(key_native);
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingOptions_SetEnqueueDataSettingsInt")]
-    private static extern void ovr_MatchmakingOptions_SetEnqueueDataSettingsInt_Native(IntPtr handle, IntPtr key, int value);
-
-    public static void ovr_MatchmakingOptions_SetEnqueueDataSettingsDouble(IntPtr handle, string key, double value) {
-      IntPtr key_native = StringToNative(key);
-      ovr_MatchmakingOptions_SetEnqueueDataSettingsDouble_Native(handle, key_native, value);
-      Marshal.FreeCoTaskMem(key_native);
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingOptions_SetEnqueueDataSettingsDouble")]
-    private static extern void ovr_MatchmakingOptions_SetEnqueueDataSettingsDouble_Native(IntPtr handle, IntPtr key, double value);
-
-    public static void ovr_MatchmakingOptions_SetEnqueueDataSettingsString(IntPtr handle, string key, string value) {
-      IntPtr key_native = StringToNative(key);
+    public static void ovr_ApplicationOptions_SetLobbySessionId(IntPtr handle, string value) {
       IntPtr value_native = StringToNative(value);
-      ovr_MatchmakingOptions_SetEnqueueDataSettingsString_Native(handle, key_native, value_native);
-      Marshal.FreeCoTaskMem(key_native);
+      ovr_ApplicationOptions_SetLobbySessionId_Native(handle, value_native);
       Marshal.FreeCoTaskMem(value_native);
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingOptions_SetEnqueueDataSettingsString")]
-    private static extern void ovr_MatchmakingOptions_SetEnqueueDataSettingsString_Native(IntPtr handle, IntPtr key, IntPtr value);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationOptions_SetLobbySessionId")]
+    private static extern void ovr_ApplicationOptions_SetLobbySessionId_Native(IntPtr handle, IntPtr value);
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_MatchmakingOptions_ClearEnqueueDataSettings(IntPtr handle);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_MatchmakingOptions_SetEnqueueIsDebug(IntPtr handle, bool value);
-
-    public static void ovr_MatchmakingOptions_SetEnqueueQueryKey(IntPtr handle, string value) {
+    public static void ovr_ApplicationOptions_SetMatchSessionId(IntPtr handle, string value) {
       IntPtr value_native = StringToNative(value);
-      ovr_MatchmakingOptions_SetEnqueueQueryKey_Native(handle, value_native);
+      ovr_ApplicationOptions_SetMatchSessionId_Native(handle, value_native);
       Marshal.FreeCoTaskMem(value_native);
     }
 
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_MatchmakingOptions_SetEnqueueQueryKey")]
-    private static extern void ovr_MatchmakingOptions_SetEnqueueQueryKey_Native(IntPtr handle, IntPtr value);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ApplicationOptions_SetMatchSessionId")]
+    private static extern void ovr_ApplicationOptions_SetMatchSessionId_Native(IntPtr handle, IntPtr value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_ApplicationOptions_SetRoomId(IntPtr handle, UInt64 value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_AvatarEditorOptions_Create();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_AvatarEditorOptions_Destroy(IntPtr handle);
+
+    public static void ovr_AvatarEditorOptions_SetSourceOverride(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_AvatarEditorOptions_SetSourceOverride_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_AvatarEditorOptions_SetSourceOverride")]
+    private static extern void ovr_AvatarEditorOptions_SetSourceOverride_Native(IntPtr handle, IntPtr value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_ChallengeOptions_Create();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_ChallengeOptions_Destroy(IntPtr handle);
+
+    public static void ovr_ChallengeOptions_SetDescription(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_ChallengeOptions_SetDescription_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeOptions_SetDescription")]
+    private static extern void ovr_ChallengeOptions_SetDescription_Native(IntPtr handle, IntPtr value);
+
+    public static void ovr_ChallengeOptions_SetEndDate(IntPtr handle, DateTime value) {
+      ulong value_native = DateTimeToNative(value);
+      ovr_ChallengeOptions_SetEndDate_Native(handle, value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeOptions_SetEndDate")]
+    private static extern void ovr_ChallengeOptions_SetEndDate_Native(IntPtr handle, ulong value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_ChallengeOptions_SetIncludeActiveChallenges(IntPtr handle, bool value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_ChallengeOptions_SetIncludeFutureChallenges(IntPtr handle, bool value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_ChallengeOptions_SetIncludePastChallenges(IntPtr handle, bool value);
+
+    public static void ovr_ChallengeOptions_SetLeaderboardName(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_ChallengeOptions_SetLeaderboardName_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeOptions_SetLeaderboardName")]
+    private static extern void ovr_ChallengeOptions_SetLeaderboardName_Native(IntPtr handle, IntPtr value);
+
+    public static void ovr_ChallengeOptions_SetStartDate(IntPtr handle, DateTime value) {
+      ulong value_native = DateTimeToNative(value);
+      ovr_ChallengeOptions_SetStartDate_Native(handle, value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeOptions_SetStartDate")]
+    private static extern void ovr_ChallengeOptions_SetStartDate_Native(IntPtr handle, ulong value);
+
+    public static void ovr_ChallengeOptions_SetTitle(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_ChallengeOptions_SetTitle_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_ChallengeOptions_SetTitle")]
+    private static extern void ovr_ChallengeOptions_SetTitle_Native(IntPtr handle, IntPtr value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_ChallengeOptions_SetViewerFilter(IntPtr handle, ChallengeViewerFilter value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_ChallengeOptions_SetVisibility(IntPtr handle, ChallengeVisibility value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_GroupPresenceOptions_Create();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_GroupPresenceOptions_Destroy(IntPtr handle);
+
+    public static void ovr_GroupPresenceOptions_SetDeeplinkMessageOverride(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_GroupPresenceOptions_SetDeeplinkMessageOverride_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceOptions_SetDeeplinkMessageOverride")]
+    private static extern void ovr_GroupPresenceOptions_SetDeeplinkMessageOverride_Native(IntPtr handle, IntPtr value);
+
+    public static void ovr_GroupPresenceOptions_SetDestinationApiName(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_GroupPresenceOptions_SetDestinationApiName_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceOptions_SetDestinationApiName")]
+    private static extern void ovr_GroupPresenceOptions_SetDestinationApiName_Native(IntPtr handle, IntPtr value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_GroupPresenceOptions_SetIsJoinable(IntPtr handle, bool value);
+
+    public static void ovr_GroupPresenceOptions_SetLobbySessionId(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_GroupPresenceOptions_SetLobbySessionId_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceOptions_SetLobbySessionId")]
+    private static extern void ovr_GroupPresenceOptions_SetLobbySessionId_Native(IntPtr handle, IntPtr value);
+
+    public static void ovr_GroupPresenceOptions_SetMatchSessionId(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_GroupPresenceOptions_SetMatchSessionId_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_GroupPresenceOptions_SetMatchSessionId")]
+    private static extern void ovr_GroupPresenceOptions_SetMatchSessionId_Native(IntPtr handle, IntPtr value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_InviteOptions_Create();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_InviteOptions_Destroy(IntPtr handle);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_InviteOptions_AddSuggestedUser(IntPtr handle, UInt64 value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_InviteOptions_ClearSuggestedUsers(IntPtr handle);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_MultiplayerErrorOptions_Create();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_MultiplayerErrorOptions_Destroy(IntPtr handle);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_MultiplayerErrorOptions_SetErrorKey(IntPtr handle, MultiplayerErrorErrorKey value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_NetSyncOptions_Create();
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_NetSyncOptions_Destroy(IntPtr handle);
+
+    public static void ovr_NetSyncOptions_SetVoipGroup(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_NetSyncOptions_SetVoipGroup_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_NetSyncOptions_SetVoipGroup")]
+    private static extern void ovr_NetSyncOptions_SetVoipGroup_Native(IntPtr handle, IntPtr value);
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern void ovr_NetSyncOptions_SetVoipStreamDefault(IntPtr handle, NetSyncVoipStreamMode value);
+
+    public static void ovr_NetSyncOptions_SetZoneId(IntPtr handle, string value) {
+      IntPtr value_native = StringToNative(value);
+      ovr_NetSyncOptions_SetZoneId_Native(handle, value_native);
+      Marshal.FreeCoTaskMem(value_native);
+    }
+
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_NetSyncOptions_SetZoneId")]
+    private static extern void ovr_NetSyncOptions_SetZoneId_Native(IntPtr handle, IntPtr value);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_RichPresenceOptions_Create();
@@ -3149,23 +3396,6 @@ namespace Oculus.Platform
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RichPresenceOptions_SetApiName")]
     private static extern void ovr_RichPresenceOptions_SetApiName_Native(IntPtr handle, IntPtr value);
 
-    public static void ovr_RichPresenceOptions_SetArgsString(IntPtr handle, string key, string value) {
-      IntPtr key_native = StringToNative(key);
-      IntPtr value_native = StringToNative(value);
-      ovr_RichPresenceOptions_SetArgsString_Native(handle, key_native, value_native);
-      Marshal.FreeCoTaskMem(key_native);
-      Marshal.FreeCoTaskMem(value_native);
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RichPresenceOptions_SetArgsString")]
-    private static extern void ovr_RichPresenceOptions_SetArgsString_Native(IntPtr handle, IntPtr key, IntPtr value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RichPresenceOptions_ClearArgs(IntPtr handle);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RichPresenceOptions_SetCurrentCapacity(IntPtr handle, uint value);
-
     public static void ovr_RichPresenceOptions_SetDeeplinkMessageOverride(IntPtr handle, string value) {
       IntPtr value_native = StringToNative(value);
       ovr_RichPresenceOptions_SetDeeplinkMessageOverride_Native(handle, value_native);
@@ -3176,69 +3406,19 @@ namespace Oculus.Platform
     private static extern void ovr_RichPresenceOptions_SetDeeplinkMessageOverride_Native(IntPtr handle, IntPtr value);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RichPresenceOptions_SetEndTime(IntPtr handle, DateTime value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RichPresenceOptions_SetExtraContext(IntPtr handle, RichPresenceExtraContext value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RichPresenceOptions_SetIsIdle(IntPtr handle, bool value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern void ovr_RichPresenceOptions_SetIsJoinable(IntPtr handle, bool value);
 
-    public static void ovr_RichPresenceOptions_SetJoinableId(IntPtr handle, string value) {
-      IntPtr value_native = StringToNative(value);
-      ovr_RichPresenceOptions_SetJoinableId_Native(handle, value_native);
-      Marshal.FreeCoTaskMem(value_native);
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RichPresenceOptions_SetJoinableId")]
-    private static extern void ovr_RichPresenceOptions_SetJoinableId_Native(IntPtr handle, IntPtr value);
+    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
+    public static extern IntPtr ovr_RosterOptions_Create();
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RichPresenceOptions_SetMaxCapacity(IntPtr handle, uint value);
+    public static extern void ovr_RosterOptions_Destroy(IntPtr handle);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RichPresenceOptions_SetStartTime(IntPtr handle, DateTime value);
+    public static extern void ovr_RosterOptions_AddSuggestedUser(IntPtr handle, UInt64 value);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern IntPtr ovr_RoomOptions_Create();
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RoomOptions_Destroy(IntPtr handle);
-
-    public static void ovr_RoomOptions_SetDataStoreString(IntPtr handle, string key, string value) {
-      IntPtr key_native = StringToNative(key);
-      IntPtr value_native = StringToNative(value);
-      ovr_RoomOptions_SetDataStoreString_Native(handle, key_native, value_native);
-      Marshal.FreeCoTaskMem(key_native);
-      Marshal.FreeCoTaskMem(value_native);
-    }
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl, EntryPoint="ovr_RoomOptions_SetDataStoreString")]
-    private static extern void ovr_RoomOptions_SetDataStoreString_Native(IntPtr handle, IntPtr key, IntPtr value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RoomOptions_ClearDataStore(IntPtr handle);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RoomOptions_SetExcludeRecentlyMet(IntPtr handle, bool value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RoomOptions_SetMaxUserResults(IntPtr handle, uint value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RoomOptions_SetOrdering(IntPtr handle, UserOrdering value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RoomOptions_SetRecentlyMetTimeWindow(IntPtr handle, TimeWindow value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RoomOptions_SetRoomId(IntPtr handle, UInt64 value);
-
-    [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
-    public static extern void ovr_RoomOptions_SetTurnOffUpdates(IntPtr handle, bool value);
+    public static extern void ovr_RosterOptions_ClearSuggestedUsers(IntPtr handle);
 
     [DllImport(DLL_NAME, CallingConvention=CallingConvention.Cdecl)]
     public static extern IntPtr ovr_UserOptions_Create();

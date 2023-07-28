@@ -1,293 +1,228 @@
-/************************************************************************************
-Copyright : Copyright (c) Facebook Technologies, LLC and its affiliates. All rights reserved.
-
-Licensed under the Oculus Utilities SDK License Version 1.31 (the "License"); you may not use
-the Utilities SDK except in compliance with the License, which is provided at the time of installation
-or download, or which otherwise accompanies this software in either electronic or hard copy form.
-
-You may obtain a copy of the License at
-https://developer.oculus.com/licenses/utilities-1.31
-
-Unless required by applicable law or agreed to in writing, the Utilities SDK distributed
-under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
-ANY KIND, either express or implied. See the License for the specific language governing
-permissions and limitations under the License.
-************************************************************************************/
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * Licensed under the Oculus SDK License Agreement (the "License");
+ * you may not use the Oculus SDK except in compliance with the License,
+ * which is provided at the time of installation or download, or which
+ * otherwise accompanies this software in either electronic or hard copy form.
+ *
+ * You may obtain a copy of the License at
+ *
+ * https://developer.oculus.com/licenses/oculussdk/
+ *
+ * Unless required by applicable law or agreed to in writing, the Oculus SDK
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 using UnityEngine;
 using UnityEditor;
-using System.Collections.Generic;
-using System.Reflection;
 
 [CustomEditor(typeof(OVRManager))]
 public class OVRManagerEditor : Editor
 {
-	override public void OnInspectorGUI()
-	{
+    private SerializedProperty _requestBodyTrackingPermissionOnStartup;
+    private SerializedProperty _requestFaceTrackingPermissionOnStartup;
+    private SerializedProperty _requestEyeTrackingPermissionOnStartup;
+    private bool _expandPermissionsRequest;
+
+    void OnEnable()
+    {
+        _requestBodyTrackingPermissionOnStartup =
+            serializedObject.FindProperty(nameof(OVRManager.requestBodyTrackingPermissionOnStartup));
+        _requestFaceTrackingPermissionOnStartup =
+            serializedObject.FindProperty(nameof(OVRManager.requestFaceTrackingPermissionOnStartup));
+        _requestEyeTrackingPermissionOnStartup =
+            serializedObject.FindProperty(nameof(OVRManager.requestEyeTrackingPermissionOnStartup));
+    }
+
+    public override void OnInspectorGUI()
+    {
+        serializedObject.ApplyModifiedProperties();
+        OVRRuntimeSettings runtimeSettings = OVRRuntimeSettings.GetRuntimeSettings();
+        OVRProjectConfig projectConfig = OVRProjectConfig.GetProjectConfig();
+
 #if UNITY_ANDROID
-		EditorGUILayout.LabelField("Target Devices");
-		EditorGUI.indentLevel++;
-		OVRProjectConfig projectConfig = OVRProjectConfig.GetProjectConfig();
-		List<OVRProjectConfig.DeviceType> oldTargetDeviceTypes = projectConfig.targetDeviceTypes;
-		List<OVRProjectConfig.DeviceType> targetDeviceTypes = new List<OVRProjectConfig.DeviceType>(oldTargetDeviceTypes);
-		bool hasModified = false;
-		int newCount = Mathf.Max(0, EditorGUILayout.IntField("Size", targetDeviceTypes.Count));
-		while (newCount < targetDeviceTypes.Count)
-		{
-			targetDeviceTypes.RemoveAt(targetDeviceTypes.Count - 1);
-			hasModified = true;
-		}
-		while (newCount > targetDeviceTypes.Count)
-		{
-			targetDeviceTypes.Add(OVRProjectConfig.DeviceType.Quest);
-			hasModified = true;
-		}
-		for (int i = 0; i < targetDeviceTypes.Count; i++)
-		{
-			var deviceType = (OVRProjectConfig.DeviceType)EditorGUILayout.EnumPopup(string.Format("Element {0}", i), targetDeviceTypes[i]);
-			if (deviceType != targetDeviceTypes[i])
-			{
-				targetDeviceTypes[i] = deviceType;
-				hasModified = true;
-			}
-		}
-		if (hasModified)
-		{
-			projectConfig.targetDeviceTypes = targetDeviceTypes;
-			OVRProjectConfig.CommitProjectConfig(projectConfig);
-		}
-		EditorGUI.indentLevel--;
-		EditorGUILayout.Space();
+        OVRProjectConfigEditor.DrawTargetDeviceInspector(projectConfig);
+        EditorGUILayout.Space();
 #endif
 
-		DrawDefaultInspector();
+        DrawDefaultInspector();
+
+        bool modified = false;
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN || UNITY_ANDROID
-		OVRManager manager = (OVRManager)target;
+        OVRManager manager = (OVRManager)target;
+
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Display", EditorStyles.boldLabel);
+
+        OVRManager.ColorSpace colorGamut = runtimeSettings.colorSpace;
+        OVREditorUtil.SetupEnumField(target, new GUIContent("Color Gamut",
+                "The target color gamut when displayed on the HMD"), ref colorGamut, ref modified,
+            "https://developer.oculus.com/documentation/unity/unity-color-space/");
+        manager.colorGamut = colorGamut;
+
+        if (modified)
+        {
+            runtimeSettings.colorSpace = colorGamut;
+            OVRRuntimeSettings.CommitRuntimeSettings(runtimeSettings);
+        }
 #endif
 
+        EditorGUILayout.Space();
+        OVRProjectConfigEditor.DrawProjectConfigInspector(projectConfig);
+
 #if UNITY_ANDROID
-		EditorGUILayout.Space();
-		EditorGUILayout.LabelField("Security", EditorStyles.boldLabel);
-		EditorGUI.BeginChangeCheck();
-
-		bool disableBackups = projectConfig.disableBackups;
-		bool enableNSCConfig = projectConfig.enableNSCConfig;
-		SetupBoolField("Disable Backups", ref disableBackups);
-		SetupBoolField("Enable NSC Configuration", ref enableNSCConfig);
-
-		if(EditorGUI.EndChangeCheck())
-		{
-			projectConfig.disableBackups = disableBackups;
-			projectConfig.enableNSCConfig = enableNSCConfig;
-			OVRProjectConfig.CommitProjectConfig(projectConfig);
-		}
-
-		EditorGUILayout.Space();
-		EditorGUILayout.LabelField("Mixed Reality Capture for Quest (experimental)", EditorStyles.boldLabel);
-		EditorGUI.indentLevel++;
-		SetupMrcActivationModeField("ActivationMode", ref manager.mrcActivationMode);
-		EditorGUI.indentLevel--;
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Mixed Reality Capture for Quest", EditorStyles.boldLabel);
+        EditorGUI.indentLevel++;
+        OVREditorUtil.SetupEnumField(target, "ActivationMode", ref manager.mrcActivationMode, ref modified);
+        EditorGUI.indentLevel--;
 #endif
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
-		EditorGUILayout.Space();
-		EditorGUILayout.LabelField("Mixed Reality Capture", EditorStyles.boldLabel);
-		SetupBoolField("Show Properties", ref manager.expandMixedRealityCapturePropertySheet);
-		if (manager.expandMixedRealityCapturePropertySheet)
-		{
-			string[] layerMaskOptions = new string[32];
-			for (int i=0; i<32; ++i)
-			{
-				layerMaskOptions[i] = LayerMask.LayerToName(i);
-				if (layerMaskOptions[i].Length == 0)
-				{
-					layerMaskOptions[i] = "<Layer " + i.ToString() + ">";
-				}
-			}
+        EditorGUILayout.Space();
+        EditorGUILayout.BeginHorizontal();
+        manager.expandMixedRealityCapturePropertySheet =
+            EditorGUILayout.BeginFoldoutHeaderGroup(manager.expandMixedRealityCapturePropertySheet,
+                "Mixed Reality Capture");
+        OVREditorUtil.DisplayDocLink("https://developer.oculus.com/documentation/unity/unity-mrc/");
+        EditorGUILayout.EndHorizontal();
+        if (manager.expandMixedRealityCapturePropertySheet)
+        {
+            string[] layerMaskOptions = new string[32];
+            for (int i = 0; i < 32; ++i)
+            {
+                layerMaskOptions[i] = LayerMask.LayerToName(i);
+                if (layerMaskOptions[i].Length == 0)
+                {
+                    layerMaskOptions[i] = "<Layer " + i.ToString() + ">";
+                }
+            }
 
-			EditorGUI.indentLevel++;
+            EditorGUI.indentLevel++;
 
-			EditorGUILayout.Space();
-			SetupBoolField("enableMixedReality", ref manager.enableMixedReality);
-			SetupCompositoinMethodField("compositionMethod", ref manager.compositionMethod);
-			SetupLayerMaskField("extraHiddenLayers", ref manager.extraHiddenLayers, layerMaskOptions);
+            OVREditorUtil.SetupBoolField(target, "Enable MixedRealityCapture", ref manager.enableMixedReality,
+                ref modified);
+            OVREditorUtil.SetupEnumField(target, "Composition Method", ref manager.compositionMethod, ref modified);
+            OVREditorUtil.SetupLayerMaskField(target, "Extra Hidden Layers", ref manager.extraHiddenLayers,
+                layerMaskOptions, ref modified);
+            OVREditorUtil.SetupLayerMaskField(target, "Extra Visible Layers", ref manager.extraVisibleLayers,
+                layerMaskOptions, ref modified);
+            OVREditorUtil.SetupBoolField(target, "Dynamic Culling Mask", ref manager.dynamicCullingMask, ref modified);
 
-			if (manager.compositionMethod == OVRManager.CompositionMethod.External)
-			{
-				EditorGUILayout.Space();
-				EditorGUILayout.LabelField("External Composition", EditorStyles.boldLabel);
-				EditorGUI.indentLevel++;
+            // CompositionMethod.External is the only composition method that is available.
+            // All other deprecated composition methods should fallback to the path below.
+            {
+                // CompositionMethod.External
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("External Composition", EditorStyles.boldLabel);
+                EditorGUI.indentLevel++;
 
-				SetupColorField("backdropColor (Rift)", ref manager.externalCompositionBackdropColorRift);
-				SetupColorField("backdropColor (Quest)", ref manager.externalCompositionBackdropColorQuest);
-			}
+                OVREditorUtil.SetupColorField(target, "Backdrop Color (Target, Rift)",
+                    ref manager.externalCompositionBackdropColorRift, ref modified);
+                OVREditorUtil.SetupColorField(target, "Backdrop Color (Target, Quest)",
+                    ref manager.externalCompositionBackdropColorQuest, ref modified);
+                EditorGUI.indentLevel--;
+            }
 
-			if (manager.compositionMethod == OVRManager.CompositionMethod.Direct)
-			{
-				EditorGUILayout.Space();
-				EditorGUILayout.LabelField("Direct Composition", EditorStyles.boldLabel);
-				EditorGUI.indentLevel++;
+            EditorGUI.indentLevel--;
+        }
 
-				EditorGUILayout.Space();
-				EditorGUILayout.LabelField("Camera", EditorStyles.boldLabel);
-				SetupCameraDeviceField("capturingCameraDevice", ref manager.capturingCameraDevice);
-				SetupBoolField("flipCameraFrameHorizontally", ref manager.flipCameraFrameHorizontally);
-				SetupBoolField("flipCameraFrameVertically", ref manager.flipCameraFrameVertically);
-
-				EditorGUILayout.Space();
-				EditorGUILayout.LabelField("Chroma Key", EditorStyles.boldLabel);
-				SetupColorField("chromaKeyColor", ref manager.chromaKeyColor);
-				SetupFloatField("chromaKeySimilarity", ref manager.chromaKeySimilarity);
-				SetupFloatField("chromaKeySmoothRange", ref manager.chromaKeySmoothRange);
-				SetupFloatField("chromaKeySpillRange", ref manager.chromaKeySpillRange);
-
-				EditorGUILayout.Space();
-				EditorGUILayout.LabelField("Dynamic Lighting", EditorStyles.boldLabel);
-				SetupBoolField("useDynamicLighting", ref manager.useDynamicLighting);
-				SetupDepthQualityField("depthQuality", ref manager.depthQuality);
-				SetupFloatField("dynamicLightingSmoothFactor", ref manager.dynamicLightingSmoothFactor);
-				SetupFloatField("dynamicLightingDepthVariationClampingValue", ref manager.dynamicLightingDepthVariationClampingValue);
-
-				EditorGUILayout.Space();
-				EditorGUILayout.LabelField("Virtual Green Screen", EditorStyles.boldLabel);
-				SetupVirtualGreenTypeField("virtualGreenScreenType", ref manager.virtualGreenScreenType);
-				SetupFloatField("virtualGreenScreenTopY", ref manager.virtualGreenScreenTopY);
-				SetupFloatField("virtualGreenScreenBottomY", ref manager.virtualGreenScreenBottomY);
-				SetupBoolField("virtualGreenScreenApplyDepthCulling", ref manager.virtualGreenScreenApplyDepthCulling);
-				SetupFloatField("virtualGreenScreenDepthTolerance", ref manager.virtualGreenScreenDepthTolerance);
-
-				EditorGUILayout.Space();
-				EditorGUILayout.LabelField("Latency Control", EditorStyles.boldLabel);
-				SetupFloatField("handPoseStateLatency", ref manager.handPoseStateLatency);
-				EditorGUI.indentLevel--;
-			}
-
-			EditorGUI.indentLevel--;
-		}
+        EditorGUILayout.EndFoldoutHeaderGroup();
 #endif
-	}
+
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN || UNITY_ANDROID
-	void SetupBoolField(string name, ref bool member)
-	{
-		EditorGUI.BeginChangeCheck();
-		bool value = EditorGUILayout.Toggle(name, member);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			member = value;
-		}
-	}
-
-	void SetupIntField(string name, ref int member)
-	{
-		EditorGUI.BeginChangeCheck();
-		int value = EditorGUILayout.IntField(name, member);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			member = value;
-		}
-	}
-
-	void SetupFloatField(string name, ref float member)
-	{
-		EditorGUI.BeginChangeCheck();
-		float value = EditorGUILayout.FloatField(name, member);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			member = value;
-		}
-	}
-
-	void SetupDoubleField(string name, ref double member)
-	{
-		EditorGUI.BeginChangeCheck();
-		double value = EditorGUILayout.DoubleField(name, member);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			member = value;
-		}
-	}
-	void SetupColorField(string name, ref Color member)
-	{
-		EditorGUI.BeginChangeCheck();
-		Color value = EditorGUILayout.ColorField(name, member);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			member = value;
-		}
-	}
-
-	void SetupLayerMaskField(string name, ref LayerMask layerMask, string[] layerMaskOptions)
-	{
-		EditorGUI.BeginChangeCheck();
-		int value = EditorGUILayout.MaskField(name, layerMask, layerMaskOptions);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			layerMask = value;
-		}
-	}
-
-	void SetupCompositoinMethodField(string name, ref OVRManager.CompositionMethod method)
-	{
-		EditorGUI.BeginChangeCheck();
-		OVRManager.CompositionMethod value = (OVRManager.CompositionMethod)EditorGUILayout.EnumPopup(name, method);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			method = value;
-		}
-	}
-
-	void SetupCameraDeviceField(string name, ref OVRManager.CameraDevice device)
-	{
-		EditorGUI.BeginChangeCheck();
-		OVRManager.CameraDevice value = (OVRManager.CameraDevice)EditorGUILayout.EnumPopup(name, device);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			device = value;
-		}
-	}
-
-	void SetupDepthQualityField(string name, ref OVRManager.DepthQuality depthQuality)
-	{
-		EditorGUI.BeginChangeCheck();
-		OVRManager.DepthQuality value = (OVRManager.DepthQuality)EditorGUILayout.EnumPopup(name, depthQuality);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			depthQuality = value;
-		}
-	}
-
-	void SetupVirtualGreenTypeField(string name, ref OVRManager.VirtualGreenScreenType virtualGreenScreenType)
-	{
-		EditorGUI.BeginChangeCheck();
-		OVRManager.VirtualGreenScreenType value = (OVRManager.VirtualGreenScreenType)EditorGUILayout.EnumPopup(name, virtualGreenScreenType);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			virtualGreenScreenType = value;
-		}
-	}
-
-	void SetupMrcActivationModeField(string name, ref OVRManager.MrcActivationMode mrcActivationMode)
-	{
-		EditorGUI.BeginChangeCheck();
-		OVRManager.MrcActivationMode value = (OVRManager.MrcActivationMode)EditorGUILayout.EnumPopup(name, mrcActivationMode);
-		if (EditorGUI.EndChangeCheck())
-		{
-			Undo.RecordObject(target, "Changed " + name);
-			mrcActivationMode = value;
-		}
-	}
+        // Insight Passthrough section
+#if UNITY_ANDROID
+        bool passthroughCapabilityEnabled =
+            projectConfig.insightPassthroughSupport != OVRProjectConfig.FeatureSupport.None;
+        EditorGUI.BeginDisabledGroup(!passthroughCapabilityEnabled);
+        GUIContent enablePassthroughContent = new GUIContent("Enable Passthrough",
+            "Enables passthrough functionality for the scene. Can be toggled at runtime. Passthrough Capability must be enabled in the project settings.");
+#else
+        GUIContent enablePassthroughContent = new GUIContent("Enable Passthrough",
+            "Enables passthrough functionality for the scene. Can be toggled at runtime.");
+#endif
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Insight Passthrough", EditorStyles.boldLabel);
+#if UNITY_ANDROID
+        if (!passthroughCapabilityEnabled)
+        {
+            EditorGUILayout.LabelField(
+                "Requires Passthrough Capability to be enabled in the General section of the Quest features.",
+                EditorStyles.wordWrappedLabel);
+        }
+#endif
+        OVREditorUtil.SetupBoolField(target, enablePassthroughContent, ref manager.isInsightPassthroughEnabled,
+            ref modified);
+#if UNITY_ANDROID
+        EditorGUI.EndDisabledGroup();
+#endif
 
 #endif
+
+        #region PermissionRequests
+
+        EditorGUILayout.Space();
+        _expandPermissionsRequest =
+            EditorGUILayout.BeginFoldoutHeaderGroup(_expandPermissionsRequest, "Permission Requests On Startup");
+        if (_expandPermissionsRequest)
+        {
+            void AddPermissionGroup(bool featureEnabled, string permissionName, SerializedProperty property)
+            {
+                using (new EditorGUI.DisabledScope(!featureEnabled))
+                {
+                    if (!featureEnabled)
+                    {
+                        EditorGUILayout.LabelField(
+                            $"Requires {permissionName} Capability to be enabled in the Quest features section.",
+                            EditorStyles.wordWrappedLabel);
+                    }
+
+                    var label = new GUIContent(permissionName,
+                        $"Requests {permissionName} permission on start up. {permissionName} Capability must be enabled in the project settings.");
+                    EditorGUILayout.PropertyField(property, label);
+                }
+            }
+
+            AddPermissionGroup(projectConfig.bodyTrackingSupport != OVRProjectConfig.FeatureSupport.None,
+                "Body Tracking", _requestBodyTrackingPermissionOnStartup);
+            AddPermissionGroup(projectConfig.faceTrackingSupport != OVRProjectConfig.FeatureSupport.None,
+                "Face Tracking", _requestFaceTrackingPermissionOnStartup);
+            AddPermissionGroup(projectConfig.eyeTrackingSupport != OVRProjectConfig.FeatureSupport.None, "Eye Tracking",
+                _requestEyeTrackingPermissionOnStartup);
+        }
+
+        EditorGUILayout.EndFoldoutHeaderGroup();
+
+        #endregion
+
+
+        if (modified)
+        {
+            EditorUtility.SetDirty(target);
+        }
+
+        serializedObject.ApplyModifiedProperties();
+
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN || UNITY_ANDROID
+#if !OCULUS_XR_VULKAN_DYNAMIC_RESOLUTION || UNITY_2020
+        if (manager.enableDynamicResolution && !PlayerSettings.GetUseDefaultGraphicsAPIs(BuildTarget.Android))
+        {
+            UnityEngine.Rendering.GraphicsDeviceType[] apis = PlayerSettings.GetGraphicsAPIs(BuildTarget.Android);
+            if (apis.Length >= 1 && apis[0] == UnityEngine.Rendering.GraphicsDeviceType.Vulkan)
+            {
+                Debug.LogError("Vulkan Dynamic Resolution is not supported on your current build version. Ensure you are on Unity 2021 + with Oculus XR plugin v3.3.0+");
+                manager.enableDynamicResolution = false;
+            }
+        }
+#endif
+#endif
+    }
 }

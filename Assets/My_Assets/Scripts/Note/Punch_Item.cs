@@ -70,6 +70,7 @@ public class Punch_Item : ItemBehaviour
 
         //シークエンスを再生
         seq.Play();
+
     }
 
     private void Update()

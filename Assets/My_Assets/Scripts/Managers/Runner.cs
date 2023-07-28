@@ -128,7 +128,6 @@ public class Runner : MonoBehaviour
         else
         {
             GameEnd();
-            _isPlaying = false;
         }
     }
 

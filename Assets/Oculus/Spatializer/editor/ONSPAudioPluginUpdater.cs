@@ -1,23 +1,22 @@
-/************************************************************************************
-
-Copyright   :   Copyright (c) Facebook Technologies, LLC and its affiliates. All rights reserved.
-
-Licensed under the Oculus SDK License Version 3.4.1 (the "License");
-you may not use the Oculus SDK except in compliance with the License,
-which is provided at the time of installation or download, or which
-otherwise accompanies this software in either electronic or hard copy form.
-
-You may obtain a copy of the License at
-
-https://developer.oculus.com/licenses/sdk-3.4.1
-
-Unless required by applicable law or agreed to in writing, the Oculus SDK
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
-************************************************************************************/
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * Licensed under the Oculus SDK License Agreement (the "License");
+ * you may not use the Oculus SDK except in compliance with the License,
+ * which is provided at the time of installation or download, or which
+ * otherwise accompanies this software in either electronic or hard copy form.
+ *
+ * You may obtain a copy of the License at
+ *
+ * https://developer.oculus.com/licenses/oculussdk/
+ *
+ * Unless required by applicable law or agreed to in writing, the Oculus SDK
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 using UnityEngine;
 using UnityEditor;
@@ -193,7 +192,7 @@ class ONSPAudioPluginUpdater
                         File.Delete(newX64PluginPath);
                         File.Delete(newX64PluginPath + ".meta");
                     }
-                    catch (Exception e)
+                    catch (Exception e) 
                     {
                         UnityEngine.Debug.LogWarning("Exception happened when deleting new spatializer plugin: " + e.Message);
                     }
@@ -211,6 +210,34 @@ class ONSPAudioPluginUpdater
                     {
                         File.Move(newX86PluginPath, curX86PluginPath);
                         File.Move(newX86PluginPath + ".meta", curX86PluginPath + ".meta");
+
+                        // fix the platform
+                        string curX86PluginPathRel = "Assets/Oculus/Spatializer/Plugins/x86/AudioPluginOculusSpatializer.dll";
+                        UnityEngine.Debug.Log("path = " + curX86PluginPathRel);
+                        AssetDatabase.ImportAsset(curX86PluginPathRel, ImportAssetOptions.ForceUpdate);
+                        PluginImporter pi = PluginImporter.GetAtPath(curX86PluginPathRel) as PluginImporter;
+                        pi.SetCompatibleWithEditor(false);
+                        pi.SetCompatibleWithAnyPlatform(false);
+                        pi.SetCompatibleWithPlatform(BuildTarget.Android, false);
+                        pi.SetCompatibleWithPlatform(BuildTarget.StandaloneWindows64, false);
+#if UNITY_2017_3_OR_NEWER
+                        pi.SetCompatibleWithPlatform(BuildTarget.StandaloneOSX, false);
+#else
+			            pi.SetCompatibleWithPlatform(BuildTarget.StandaloneOSXUniversal, false);
+			            pi.SetCompatibleWithPlatform(BuildTarget.StandaloneOSXIntel, false);
+			            pi.SetCompatibleWithPlatform(BuildTarget.StandaloneOSXIntel64, false);
+#endif
+                        pi.SetCompatibleWithPlatform(BuildTarget.StandaloneWindows, true);
+                        pi.SetCompatibleWithEditor(true);
+                        pi.SetEditorData("CPU", "X86");
+                        pi.SetEditorData("OS", "Windows");
+                        pi.SetPlatformData("Editor", "CPU", "X86");
+                        pi.SetPlatformData("Editor", "OS", "Windows");
+
+                        AssetDatabase.ImportAsset(curX86PluginPathRel, ImportAssetOptions.ForceUpdate);
+                        AssetDatabase.Refresh();
+                        AssetDatabase.SaveAssets();
+
                         upgradeDone = true;
                     }
                     catch (Exception e)
@@ -226,6 +253,34 @@ class ONSPAudioPluginUpdater
                     {
                         File.Move(newX64PluginPath, curX64PluginPath);
                         File.Move(newX64PluginPath + ".meta", curX64PluginPath + ".meta");
+
+                        // fix the platform
+                        string curX64PluginPathRel = "Assets/Oculus/Spatializer/Plugins/x86_64/AudioPluginOculusSpatializer.dll";
+                        UnityEngine.Debug.Log("path = " + curX64PluginPathRel);
+                        AssetDatabase.ImportAsset(curX64PluginPathRel, ImportAssetOptions.ForceUpdate);
+                        PluginImporter pi = PluginImporter.GetAtPath(curX64PluginPathRel) as PluginImporter;
+                        pi.SetCompatibleWithEditor(false);
+                        pi.SetCompatibleWithAnyPlatform(false);
+                        pi.SetCompatibleWithPlatform(BuildTarget.Android, false);
+                        pi.SetCompatibleWithPlatform(BuildTarget.StandaloneWindows, false);
+#if UNITY_2017_3_OR_NEWER
+                        pi.SetCompatibleWithPlatform(BuildTarget.StandaloneOSX, false);
+#else
+		                pi.SetCompatibleWithPlatform(BuildTarget.StandaloneOSXUniversal, false);
+		                pi.SetCompatibleWithPlatform(BuildTarget.StandaloneOSXIntel, false);
+		                pi.SetCompatibleWithPlatform(BuildTarget.StandaloneOSXIntel64, false);
+#endif
+                        pi.SetCompatibleWithPlatform(BuildTarget.StandaloneWindows64, true);
+                        pi.SetCompatibleWithEditor(true);
+                        pi.SetEditorData("CPU", "X86_64");
+                        pi.SetEditorData("OS", "Windows");
+                        pi.SetPlatformData("Editor", "CPU", "X86_64");
+                        pi.SetPlatformData("Editor", "OS", "Windows");
+
+                        AssetDatabase.ImportAsset(curX64PluginPathRel, ImportAssetOptions.ForceUpdate);
+                        AssetDatabase.Refresh();
+                        AssetDatabase.SaveAssets();
+
                         upgradeDone = true;
                     }
                     catch (Exception e)
@@ -233,7 +288,7 @@ class ONSPAudioPluginUpdater
                         UnityEngine.Debug.LogWarning("Unable to rename the new spatializer plugin: " + e.Message);
                     }
                 }
-
+                
                 if (upgradeDone)
                 {
                     if (unityRunningInBatchmode
@@ -251,10 +306,6 @@ class ONSPAudioPluginUpdater
                     }
                 }
             }
-        }
-        else
-        {
-            UnityEngine.Debug.Log("No new spatializer plugin(s) found");
         }
     }
 
